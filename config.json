@@ -1,0 +1,64 @@
+{
+  "name": "Smart Climate Forecasting",
+  "version": "1.0.0",
+  "slug": "smart_climate",
+  "description": "Advanced climate prediction and control using RC modeling with machine learning enhancement",
+  "url": "https://github.com/olstadm/Home-Assistant-Smart-Climate",
+  "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
+  "startup": "application",
+  "boot": "auto",
+  "init": false,
+  "options": {
+    "indoor_temperature_sensor": "sensor.indoor_temperature",
+    "outdoor_temperature_sensor": "sensor.outdoor_temperature",
+    "climate_entity": "climate.downstairs",
+    "indoor_humidity_sensor": "",
+    "outdoor_humidity_sensor": "",
+    "learning_enabled": true,
+    "forecast_hours": 12,
+    "update_interval_minutes": 5,
+    "comfort_max_temp": 80.0,
+    "comfort_min_temp": 62.0,
+    "accuweather_api_key": "",
+    "accuweather_location_key": "",
+    "ml_training_enabled": true,
+    "ml_training_interval_hours": 1
+  },
+  "schema": {
+    "indoor_temperature_sensor": "str",
+    "outdoor_temperature_sensor": "str",
+    "climate_entity": "str",
+    "indoor_humidity_sensor": "str?",
+    "outdoor_humidity_sensor": "str?",
+    "learning_enabled": "bool",
+    "forecast_hours": "int(1,24)",
+    "update_interval_minutes": "int(1,60)",
+    "comfort_max_temp": "float(60.0,90.0)",
+    "comfort_min_temp": "float(50.0,80.0)",
+    "accuweather_api_key": "str?",
+    "accuweather_location_key": "str?",
+    "ml_training_enabled": "bool",
+    "ml_training_interval_hours": "int(1,24)"
+  },
+  "ports": {
+    "8099": 8099
+  },
+  "ports_description": {
+    "8099": "Smart Climate API port (optional)"
+  },
+  "map": [
+    "share:rw",
+    "config:r"
+  ],
+  "environment": {
+    "LOG_LEVEL": "info"
+  },
+  "services": [
+    "mqtt:want"
+  ],
+  "hassio_api": true,
+  "hassio_role": "default",
+  "homeassistant_api": true,
+  "host_network": false,
+  "image": "ghcr.io/{arch}/smart-climate"
+}

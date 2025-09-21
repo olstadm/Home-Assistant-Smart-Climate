@@ -1,0 +1,123 @@
+title: Smart Climate Forecasting
+path: smart_climate
+icon: mdi:home-thermometer
+sections:
+  - type: grid
+    columns: 1
+    cards:
+      - type: heading
+        heading: Smart Climate Forecast (Add-on)
+      - square: false
+        type: grid
+        cards:
+          - type: custom:apexcharts-card
+            header:
+              title: Indoor Temperature Forecast (13h - ML Enhanced)
+              show: true
+            graph_span: 13h
+            span:
+              start: hour
+              offset: -1h
+            now:
+              show: true
+              label: Now
+            apex_config:
+              chart:
+                height: 360
+              legend:
+                show: true
+                position: top
+              xaxis:
+                labels:
+                  formatter: |
+                    EVAL:function(val) { 
+                      return new Date(val).toLocaleTimeString('en', {hour: '2-digit', minute: '2-digit'});
+                    }
+            yaxis:
+              - decimals: 0
+                apex_config:
+                  labels:
+                    formatter: |
+                      EVAL:function(val){return `${Math.round(val)}°F`}
+            series:
+              - entity: sensor.smart_climate_indoor_forecast
+                name: Indoor (Idle)
+                type: line
+                data_generator: >
+                  return entity.attributes.series_idle.map(p => [new
+                  Date(p.t).getTime(), p.y]);
+              - entity: sensor.smart_climate_indoor_forecast
+                name: Indoor (Controlled)
+                type: line
+                data_generator: >
+                  return entity.attributes.series_controlled.map(p => [new
+                  Date(p.t).getTime(), p.y]);
+              - entity: sensor.smart_climate_ml_enhanced_prediction
+                name: ML Enhanced
+                type: line
+                stroke_width: 3
+                color: '#ff6b6b'
+      - type: grid
+        columns: 3
+        cards:
+          - type: entity
+            entity: sensor.smart_climate_ml_enhanced_prediction
+            name: ML Enhanced Prediction
+            icon: mdi:brain
+          - type: entity
+            entity: sensor.smart_climate_comfort_score
+            name: Comfort Score
+            icon: mdi:account-heart
+          - type: entity
+            entity: sensor.smart_climate_efficiency_score
+            name: Energy Efficiency
+            icon: mdi:leaf
+      - type: grid
+        columns: 2
+        cards:
+          - type: entity
+            entity: sensor.smart_climate_comfort_violation
+            name: Comfort Violation
+            icon: mdi:alert-circle
+          - type: entity
+            entity: sensor.smart_climate_ml_status
+            name: ML Training Status
+            icon: mdi:chart-line
+      - type: heading
+        heading: RC Model Parameters
+      - type: grid
+        columns: 3
+        cards:
+          - type: entity
+            entity: sensor.smart_climate_tau_hours
+            name: Time Constant (τ)
+            icon: mdi:timer
+          - type: entity
+            entity: sensor.smart_climate_k_heat
+            name: Heating Coefficient
+            icon: mdi:fire
+          - type: entity
+            entity: sensor.smart_climate_k_cool
+            name: Cooling Coefficient
+            icon: mdi:snowflake
+      - type: heading
+        heading: Configuration Status
+      - type: markdown
+        content: |
+          **Add-on Status**: Smart Climate Forecasting is running as a Home Assistant Add-on.
+          
+          **Features**:
+          - RC (Resistor-Capacitor) thermal modeling
+          - Machine Learning prediction enhancement
+          - Comfort band violation detection
+          - Real-time parameter learning
+          - AccuWeather integration (optional)
+          
+          **ML Models**: {{ states('sensor.smart_climate_ml_status') }}
+          
+          **Current Configuration**:
+          - Indoor Sensor: Configured via add-on options
+          - Outdoor Sensor: Configured via add-on options  
+          - Climate Entity: Configured via add-on options
+          - Learning: Enabled via add-on options
+          - ML Training: Enabled via add-on options
