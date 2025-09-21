@@ -13,7 +13,7 @@ Advanced climate prediction and control using RC (Resistor-Capacitor) thermal mo
 
 ## Installation
 
-### Home Assistant Add-on Store
+### Home Assistant Add-on Store (Recommended)
 
 1. Navigate to **Supervisor** → **Add-on Store** in Home Assistant
 2. Click the menu (⋮) → **Repositories**
@@ -33,41 +33,30 @@ Advanced climate prediction and control using RC (Resistor-Capacitor) thermal mo
 
 ## Configuration
 
-### Required Settings
+### Entity Selection via UI
 
-Configure these settings in the add-on options:
+The add-on now supports **UI-based entity selection** - no need to manually type entity IDs! When configuring the add-on:
 
-```yaml
-indoor_temperature_sensor: "sensor.indoor_temperature"
-outdoor_temperature_sensor: "sensor.outdoor_temperature"  
-climate_entity: "climate.downstairs"
-```
-
-### Optional Settings
-
-```yaml
-indoor_humidity_sensor: "sensor.indoor_humidity"
-outdoor_humidity_sensor: "sensor.outdoor_humidity"
-learning_enabled: true
-forecast_hours: 12
-update_interval_minutes: 5
-comfort_max_temp: 80.0
-comfort_min_temp: 62.0
-accuweather_api_key: "your_api_key"
-accuweather_location_key: "your_location_key"
-ml_training_enabled: true
-ml_training_interval_hours: 1
-```
+1. Go to **Supervisor** → **Add-on Store** → **Smart Climate Forecasting** → **Configuration**
+2. Use the dropdown menus to select your entities:
+   - **Indoor Temperature Sensor**: Select from available temperature sensors
+   - **Outdoor Temperature Sensor**: Select from available temperature sensors  
+   - **Climate Entity**: Select from available thermostats/climate devices
+   - **Indoor/Outdoor Humidity Sensors**: Optional - select from humidity sensors
 
 ### Configuration Options
 
+All configuration is now done through the **Home Assistant UI** with intelligent entity selectors that only show relevant entities for each field.
+
+### Available Settings
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `indoor_temperature_sensor` | string | **Required** | Entity ID for indoor temperature sensor |
-| `outdoor_temperature_sensor` | string | **Required** | Entity ID for outdoor temperature sensor |
-| `climate_entity` | string | **Required** | Entity ID for climate/thermostat entity |
-| `indoor_humidity_sensor` | string | optional | Entity ID for indoor humidity sensor |
-| `outdoor_humidity_sensor` | string | optional | Entity ID for outdoor humidity sensor |
+| `indoor_temperature_sensor` | entity selector | **Required** | Indoor temperature sensor (dropdown selection) |
+| `outdoor_temperature_sensor` | entity selector | **Required** | Outdoor temperature sensor (dropdown selection) |
+| `climate_entity` | entity selector | **Required** | Climate/thermostat entity (dropdown selection) |
+| `indoor_humidity_sensor` | entity selector | optional | Indoor humidity sensor (dropdown selection) |
+| `outdoor_humidity_sensor` | entity selector | optional | Outdoor humidity sensor (dropdown selection) |
 | `learning_enabled` | bool | `true` | Enable adaptive RC model learning |
 | `forecast_hours` | int | `12` | Number of hours to forecast (1-24) |
 | `update_interval_minutes` | int | `5` | Update interval in minutes (1-60) |
