@@ -31,3 +31,13 @@ MANIFEST
 # OS files
 .DS_Store
 Thumbs.db
+
+# Add-on specific
+/data/
+*.log
+*.pkl
+/tmp/
+
+# Development files
+.env
+.env.local
