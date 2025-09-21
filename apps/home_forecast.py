@@ -120,6 +120,7 @@ class HomeForecast(hass.Hass):
         self._last_reco_ts, self._pending_reco = None, None
         self._past_preds = [] # For indoor accuracy
         self._outdoor_errors = [] # For outdoor accuracy
+        self._aw_temp_bounds = {'min': None, 'max': None} # AccuWeather temperature bounds for guardrails
 
         self.run_interval_seconds = int(self.args.get("run_interval_seconds", 60))
         self._publish_placeholders()
@@ -156,8 +157,8 @@ class HomeForecast(hass.Hass):
             attrs = {}
             if "temp" in e or "forecast" in e:
                 attrs = {"unit_of_measurement": "°F", "device_class": "temperature", "state_class": "measurement"}
-            if "accuracy" in e:
-                attrs = {"unit_of_measurement": "°F", "state_class": "measurement", "friendly_name": e.split('.')[-1].replace('_', ' ').title()}
+            elif "accuracy" in e:
+                attrs = {"unit_of_measurement": "%", "state_class": "measurement", "friendly_name": e.split('.')[-1].replace('_', ' ').title()}
             self.set_state(e, state="unknown", attributes=attrs)
 
     def _theta_from_helpers(self):
@@ -335,6 +336,18 @@ class HomeForecast(hass.Hass):
 
                 temps = [x["TempF"] for x in slim]
                 avg = round(sum(temps) / len(temps), 1)
+                
+                # Calculate temperature bounds for guardrails (20% tolerance)
+                if temps:
+                    temp_min = min(temps)
+                    temp_max = max(temps)
+                    # Apply 20% tolerance to the range
+                    temp_range = temp_max - temp_min
+                    tolerance = max(2.0, temp_range * 0.20)  # Minimum 2°F tolerance
+                    self._aw_temp_bounds = {
+                        'min': temp_min - tolerance,
+                        'max': temp_max + tolerance
+                    }
 
                 # summary
                 self.set_state(
@@ -426,7 +439,14 @@ class HomeForecast(hass.Hass):
             dTdt = a * (Tout - T) + kH * Ih + kC * Ic + b + kE * (hout - hin) + kS * Solar
             dTdt = max(-2.0, min(2.0, dTdt))
             T += dTdt
-            T = max(-40.0, min(140.0, T))
+            
+            # Apply AccuWeather temperature bounds as guardrails (if available)
+            if self._aw_temp_bounds['min'] is not None and self._aw_temp_bounds['max'] is not None:
+                T = max(self._aw_temp_bounds['min'], min(self._aw_temp_bounds['max'], T))
+            else:
+                # Fallback to basic bounds if no AccuWeather data
+                T = max(-40.0, min(140.0, T))
+            
             traj.append(T)
         return traj
 
@@ -505,22 +525,31 @@ class HomeForecast(hass.Hass):
             # Indoor: Compare current temp with prediction made `dt_min` ago
             if self._past_preds:
                 pred_for_now = self._past_preds.pop(0)
-                error = abs(Tin - pred_for_now)
-                self.set_state(self.S_INDOOR_ACC, state=round(error, 2), 
-                             attributes={"unit_of_measurement": "°F", "friendly_name": "Indoor Prediction Accuracy"})
+                if pred_for_now != 0:  # Avoid division by zero
+                    error_percentage = abs((Tin - pred_for_now) / pred_for_now) * 100
+                    accuracy_percentage = max(0, 100 - error_percentage)
+                else:
+                    accuracy_percentage = 100 if Tin == 0 else 0
+                self.set_state(self.S_INDOOR_ACC, state=round(accuracy_percentage, 1), 
+                             attributes={"unit_of_measurement": "%", "friendly_name": "Indoor Prediction Accuracy"})
 
             # Outdoor: Compare current outdoor temp with forecast
             if self._aw_cache and len(self._aw_cache) > 0:
                 fc_temp_now = self._aw_cache[0].get('TempF')
                 if fc_temp_now is not None:
-                    outdoor_error = abs(Tout_now - fc_temp_now)
-                    self._outdoor_errors.append(outdoor_error)
+                    if fc_temp_now != 0:  # Avoid division by zero
+                        error_percentage = abs((Tout_now - fc_temp_now) / fc_temp_now) * 100
+                        accuracy_percentage = max(0, 100 - error_percentage)
+                    else:
+                        accuracy_percentage = 100 if Tout_now == 0 else 0
+                    
+                    self._outdoor_errors.append(accuracy_percentage)
                     # Keep only last 60 samples (1hr rolling avg)
                     if len(self._outdoor_errors) > 60: 
                         self._outdoor_errors.pop(0)
-                    avg_outdoor_error = sum(self._outdoor_errors) / len(self._outdoor_errors)
-                    self.set_state(self.S_OUTDOOR_ACC, state=round(avg_outdoor_error, 2),
-                                 attributes={"unit_of_measurement": "°F", "friendly_name": "Outdoor Forecast Accuracy"})
+                    avg_outdoor_accuracy = sum(self._outdoor_errors) / len(self._outdoor_errors)
+                    self.set_state(self.S_OUTDOOR_ACC, state=round(avg_outdoor_accuracy, 1),
+                                 attributes={"unit_of_measurement": "%", "friendly_name": "Outdoor Forecast Accuracy"})
 
 
             # --- Learning Update ---
