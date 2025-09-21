@@ -14,6 +14,16 @@ import math
 import requests
 import json
 
+# Import ML enhancer
+try:
+    from .ml_climate_enhancer import MLClimateEnhancer
+except ImportError:
+    # Fallback for direct execution or different path structures
+    try:
+        from ml_climate_enhancer import MLClimateEnhancer
+    except ImportError:
+        MLClimateEnhancer = None
+
 
 def clip(x, lo, hi):
     return lo if x < lo else hi if x > hi else x
@@ -104,6 +114,9 @@ class HomeForecast(hass.Hass):
     S_EXT = "sensor.home_model_external_forecast_avg"
     S_COMFORT_SCORE = "sensor.home_model_comfort_score"
     S_EFFICIENCY_SCORE = "sensor.home_model_energy_efficiency"
+    S_ML_STATUS = "sensor.home_model_ml_status"
+    S_ML_ENHANCED_PREDICTION = "sensor.home_model_ml_enhanced_prediction"
+    S_COMFORT_VIOLATION = "sensor.home_model_comfort_violation"
 
     # --- Parameter Limits ---
     MIN_TAU_H, MAX_TAU_H = 0.5, 72.0
@@ -121,6 +134,10 @@ class HomeForecast(hass.Hass):
         self._past_preds = [] # For indoor accuracy
         self._outdoor_errors = [] # For outdoor accuracy
         self._aw_temp_bounds = {'min': None, 'max': None} # AccuWeather temperature bounds for guardrails
+        
+        # Initialize ML enhancer
+        self.ml_enhancer = MLClimateEnhancer() if MLClimateEnhancer else None
+        self._ml_training_counter = 0
 
         self.run_interval_seconds = int(self.args.get("run_interval_seconds", 60))
         self._publish_placeholders()
@@ -133,13 +150,15 @@ class HomeForecast(hass.Hass):
         # --- Schedulers and Listeners ---
         self.run_every(self._tick, self.datetime() + timedelta(seconds=5), self.run_interval_seconds)
         self.run_every(self._refresh_aw_fcst, self.datetime() + timedelta(seconds=10), 30 * 60)
+        # Train ML models every hour
+        self.run_every(self._train_ml_models, self.datetime() + timedelta(minutes=5), 60 * 60)
         self.run_on_shutdown(self._save_model_state)
 
         # Listen for immediate changes to HVAC state
         climate_id_entity = self._get_text(self.H_CLIMATE, "climate.downstairs")
         self.listen_state(self._hvac_state_change, climate_id_entity, attribute="hvac_action")
 
-        self.log("HomeForecast (enhanced) initialized", level="INFO")
+        self.log("HomeForecast (enhanced with ML) initialized", level="INFO")
 
     def _hvac_state_change(self, entity, attribute, old, new, kwargs):
         self.log(f"HVAC action changed from '{old}' to '{new}'. Triggering immediate tick.", level="DEBUG")
@@ -151,7 +170,8 @@ class HomeForecast(hass.Hass):
             self.S_F30, self.S_F60, self.S_F180, self.S_IDEAL_COOL, self.S_IDEAL_HEAT,
             self.S_COOL_OFF, self.S_HEAT_OFF, self.S_RECO, self.S_T2CAP, self.S_T2FLR,
             self.S_FC_SER, self.S_OUT_SER, self.S_INDOOR_ACC, self.S_OUTDOOR_ACC,
-            self.S_COMFORT_SCORE, self.S_EFFICIENCY_SCORE
+            self.S_COMFORT_SCORE, self.S_EFFICIENCY_SCORE, self.S_ML_STATUS,
+            self.S_ML_ENHANCED_PREDICTION, self.S_COMFORT_VIOLATION
         ]
         for e in entities:
             attrs = {}
@@ -191,7 +211,53 @@ class HomeForecast(hass.Hass):
         except Exception:
             return "idle"
 
+    def _train_ml_models(self, kwargs=None):
+        """Train ML models periodically"""
+        try:
+            if self.ml_enhancer:
+                scores = self.ml_enhancer.train_models()
+                status = self.ml_enhancer.get_model_status()
+                
+                self.set_state(self.S_ML_STATUS, state="trained" if scores else "training",
+                             attributes={
+                                 "models_trained": status.get('models_trained', 0),
+                                 "training_samples": status.get('training_samples', 0),
+                                 "scores": scores,
+                                 "ensemble_weights": status.get('ensemble_weights'),
+                                 "friendly_name": "ML Model Status"
+                             })
+                
+                if scores:
+                    self.log(f"ML models trained with {status.get('training_samples', 0)} samples. "
+                           f"Scores: {scores}", level="INFO")
+        except Exception as e:
+            self.log(f"ML training error: {e}", level="WARNING")
+
     def _calculate_comfort_score(self, temp, humidity, target_min, target_max):
+        """Calculate comfort score (0-100) based on temperature and humidity"""
+        # Optimal temperature comfort zone
+        if target_min <= temp <= target_max:
+            temp_score = 100.0
+        else:
+            # Penalize deviation from comfort zone
+            deviation = min(abs(temp - target_min), abs(temp - target_max))
+            temp_score = max(0.0, 100.0 - (deviation * 10.0))  # 10 points per degree F
+        
+        # Optimal humidity comfort zone (30-60% RH)
+        if humidity is None:
+            humidity_score = 75.0  # Neutral score if no humidity data
+        elif 30 <= humidity <= 60:
+            humidity_score = 100.0
+        else:
+            # Penalize deviation from comfort zone
+            if humidity < 30:
+                humidity_score = max(0.0, 100.0 - (30 - humidity) * 2.0)
+            else:  # humidity > 60
+                humidity_score = max(0.0, 100.0 - (humidity - 60) * 1.5)
+        
+        # Weighted average (temperature is more important)
+        comfort_score = (temp_score * 0.7) + (humidity_score * 0.3)
+        return round(comfort_score, 1)
         """Calculate comfort score (0-100) based on temperature and humidity"""
         # Optimal temperature comfort zone
         if target_min <= temp <= target_max:
@@ -606,6 +672,85 @@ class HomeForecast(hass.Hass):
             self._past_preds.append(traj_idle[0]) # Store prediction for next tick's accuracy check
             if len(self._past_preds) > 5: self._past_preds.pop(0)
 
+            # --- ML Enhancement ---
+            ml_enhanced_prediction = traj_idle[0]  # Default to RC prediction
+            ml_metadata = {'method': 'rc_only'}
+            
+            if self.ml_enhancer:
+                try:
+                    # Create features for ML
+                    time_features = {
+                        'hour': now.hour,
+                        'day_of_week': now.weekday(),
+                        'month': now.month
+                    }
+                    
+                    ml_features = self.ml_enhancer.create_features(
+                        current_temp=Tin,
+                        outdoor_temp=Tout_now,
+                        humidity_in=RHin_now,
+                        humidity_out=RHout_now,
+                        solar=solar_now,
+                        hvac_action=act_now,
+                        time_features=time_features
+                    )
+                    
+                    # Get RC prediction for next minute
+                    rc_temp_change = traj_idle[0] - Tin if traj_idle else 0.0
+                    
+                    # Add training sample if we have previous data
+                    if self.last_tin is not None:
+                        actual_change = Tin - self.last_tin
+                        self.ml_enhancer.add_sample(ml_features, actual_change, rc_temp_change, now)
+                        self._ml_training_counter += 1
+                    
+                    # Get ML-enhanced prediction
+                    ml_enhanced_prediction, ml_metadata = self.ml_enhancer.predict_enhancement(
+                        ml_features, traj_idle[0] if traj_idle else Tin
+                    )
+                    
+                    # Update the trajectory with ML enhancement
+                    if traj_idle and ml_metadata.get('method') == 'ml_enhanced':
+                        # Apply enhancement to first few minutes of trajectory
+                        enhancement_factor = (ml_enhanced_prediction - traj_idle[0]) / max(0.1, abs(traj_idle[0] - Tin))
+                        for i in range(min(30, len(traj_idle))):  # Apply to first 30 minutes
+                            weight = max(0.0, 1.0 - i / 30.0)  # Diminishing weight
+                            traj_idle[i] += enhancement_factor * weight * (traj_idle[i] - Tin)
+                    
+                    # Validate comfort band violations
+                    violation_info = self.ml_enhancer.validate_comfort_band_violation(
+                        current_temp=Tin,
+                        predicted_temp=ml_enhanced_prediction,
+                        comfort_min=floorF,
+                        comfort_max=capF,
+                        hvac_action=act_now
+                    )
+                    
+                    # Publish ML results
+                    self.set_state(self.S_ML_ENHANCED_PREDICTION, state=round(ml_enhanced_prediction, 2),
+                                 attributes={
+                                     "unit_of_measurement": "°F",
+                                     "device_class": "temperature",
+                                     "rc_prediction": round(traj_idle[0] if traj_idle else Tin, 2),
+                                     "enhancement": round(ml_enhanced_prediction - (traj_idle[0] if traj_idle else Tin), 3),
+                                     "confidence": ml_metadata.get('confidence', 0.5),
+                                     "method": ml_metadata.get('method', 'unknown'),
+                                     "friendly_name": "ML Enhanced Prediction"
+                                 })
+                    
+                    self.set_state(self.S_COMFORT_VIOLATION, state=violation_info['violation_type'] or "none",
+                                 attributes={
+                                     "violation_detected": violation_info['violation_detected'],
+                                     "confidence": violation_info['confidence'],
+                                     "recommendation": violation_info['recommendation'],
+                                     "comfort_min": floorF,
+                                     "comfort_max": capF,
+                                     "friendly_name": "Comfort Band Violation"
+                                 })
+                    
+                except Exception as e:
+                    self.log(f"ML enhancement error: {e}", level="WARNING")
+
             max_idle = max(traj_idle) if traj_idle else Tin
             min_idle = min(traj_idle) if traj_idle else Tin
             
@@ -690,11 +835,24 @@ class HomeForecast(hass.Hass):
                 if latest_cool <= 0:
                     status = "active" if act_now == "cooling" else "missed"
                 
-                self.set_state(
-                    self.S_IDEAL_COOL,
-                    state=start_time_iso,
-                    attributes={"minutes_from_now": latest_cool, "status": status, "cap_f": capF, "horizon_hours": H}
-                )
+                # Calculate estimated runtime
+                runtime_estimate = None
+                if cool_off_min is not None and latest_cool is not None:
+                    runtime_estimate = max(0, cool_off_min - latest_cool)
+                elif act_now == "cooling" and cool_off_min is not None:
+                    runtime_estimate = cool_off_min
+                
+                attributes = {
+                    "minutes_from_now": latest_cool, 
+                    "status": status, 
+                    "cap_f": capF, 
+                    "horizon_hours": H,
+                    "estimated_runtime_minutes": runtime_estimate
+                }
+                if runtime_estimate:
+                    attributes["estimated_runtime_hours"] = round(runtime_estimate / 60.0, 1)
+                
+                self.set_state(self.S_IDEAL_COOL, state=start_time_iso, attributes=attributes)
             else:
                 self.set_state(self.S_IDEAL_COOL, state="not needed", attributes={"status": "not_needed"})
 
@@ -705,33 +863,56 @@ class HomeForecast(hass.Hass):
                 if latest_heat <= 0:
                     status = "active" if act_now == "heating" else "missed"
 
-                self.set_state(
-                    self.S_IDEAL_HEAT,
-                    state=start_time_iso,
-                    attributes={"minutes_from_now": latest_heat, "status": status, "floor_f": floorF, "horizon_hours": H}
-                )
+                # Calculate estimated runtime
+                runtime_estimate = None
+                if heat_off_min is not None and latest_heat is not None:
+                    runtime_estimate = max(0, heat_off_min - latest_heat)
+                elif act_now == "heating" and heat_off_min is not None:
+                    runtime_estimate = heat_off_min
+                
+                attributes = {
+                    "minutes_from_now": latest_heat, 
+                    "status": status, 
+                    "floor_f": floorF, 
+                    "horizon_hours": H,
+                    "estimated_runtime_minutes": runtime_estimate
+                }
+                if runtime_estimate:
+                    attributes["estimated_runtime_hours"] = round(runtime_estimate / 60.0, 1)
+
+                self.set_state(self.S_IDEAL_HEAT, state=start_time_iso, attributes=attributes)
             else:
                 self.set_state(self.S_IDEAL_HEAT, state="not needed", attributes={"status": "not_needed"})
 
             # Publish Cool Off Time
             if act_now == "cooling":
                 off_time_state = mins_to_iso(cool_off_min) if cool_off_min is not None else "keep running"
-                self.set_state(
-                    self.S_COOL_OFF,
-                    state=off_time_state,
-                    attributes={"minutes_from_now": cool_off_min, "cap_f": capF, "horizon_hours": H}
-                )
+                attributes = {
+                    "minutes_from_now": cool_off_min, 
+                    "cap_f": capF, 
+                    "horizon_hours": H
+                }
+                if cool_off_min is not None:
+                    attributes["estimated_total_runtime_minutes"] = cool_off_min
+                    attributes["estimated_total_runtime_hours"] = round(cool_off_min / 60.0, 1)
+                
+                self.set_state(self.S_COOL_OFF, state=off_time_state, attributes=attributes)
             else:
                 self.set_state(self.S_COOL_OFF, state="n/a")
 
             # Publish Heat Off Time
             if act_now == "heating":
                 off_time_state = mins_to_iso(heat_off_min) if heat_off_min is not None else "keep running"
-                self.set_state(
-                    self.S_HEAT_OFF,
-                    state=off_time_state,
-                    attributes={"minutes_from_now": heat_off_min, "floor_f": floorF, "horizon_hours": H}
-                )
+                attributes = {
+                    "minutes_from_now": heat_off_min, 
+                    "floor_f": floorF, 
+                    "horizon_hours": H
+                }
+                if heat_off_min is not None:
+                    attributes["estimated_total_runtime_minutes"] = heat_off_min
+                    attributes["estimated_total_runtime_hours"] = round(heat_off_min / 60.0, 1)
+                
+                self.set_state(self.S_HEAT_OFF, state=off_time_state, attributes=attributes)
             else:
                 self.set_state(self.S_HEAT_OFF, state="n/a")
 

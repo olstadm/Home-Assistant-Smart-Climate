@@ -12,17 +12,27 @@ sections:
         cards:
           - type: custom:apexcharts-card
             header:
-              title: Indoor Temperature Forecast (Next 12h)
+              title: Indoor Temperature Forecast (13h - ML Enhanced)
               show: true
-            graph_span: 12h
+            graph_span: 13h
+            span:
+              start: hour
+              offset: -1h
             now:
               show: true
+              label: Now
             apex_config:
               chart:
                 height: 360
               legend:
                 show: true
                 position: top
+              xaxis:
+                labels:
+                  formatter: |
+                    EVAL:function(val) { 
+                      return new Date(val).toLocaleTimeString('en', {hour: '2-digit', minute: '2-digit'});
+                    }
             yaxis:
               - decimals: 0
                 apex_config:
@@ -45,6 +55,15 @@ sections:
 
                   return entity.attributes.series_controlled.map(p => [new
                   Date(p.t).getTime(), p.y]);
+              - entity: sensor.home_model_ml_enhanced_prediction
+                name: ML Enhanced
+                type: line
+                stroke_width: 2
+                color: '#ff6b35'
+                data_generator: >
+                  const now = new Date();
+                  const enhanced = parseFloat(entity.state) || 0;
+                  return [[now.getTime(), enhanced]];
               - entity: sensor.home_model_indoor_forecast_12h
                 name: Cooling Cap
                 type: line
@@ -71,6 +90,20 @@ sections:
 
                   return entity.attributes.series.map(p => [new
                   Date(p.t).getTime(), p.y]);
+              - entity: sensor.home_model_external_forecast_avg
+                name: AccuWeather Forecast
+                type: line
+                opacity: 0.6
+                stroke_dash: 3
+                color: '#4caf50'
+                data_generator: >
+                  if (!entity.attributes || !entity.attributes.temps) return [];
+                  const temps = entity.attributes.temps;
+                  const now = new Date();
+                  return temps.map((temp, i) => [
+                    new Date(now.getTime() + (i * 60 * 60 * 1000)).getTime(),
+                    temp
+                  ]);
         grid_options:
           columns: full
         columns: 1
@@ -89,22 +122,27 @@ sections:
         grid_options:
           columns: full
       - type: entities
-        title: Recommendations
+        title: HVAC Recommendations & Runtime
         show_header_toggle: false
         entities:
           - entity: sensor.home_model_ideal_cool_start_time
-            name: Ideal Cooling Start
+            name: Cooling Start Time
           - entity: sensor.home_model_cool_off_time
-            name: Cooling Off (if cooling now)
+            name: Cooling End Time
           - entity: sensor.home_model_ideal_heat_start_time
-            name: Ideal Heating Start
+            name: Heating Start Time
           - entity: sensor.home_model_heat_off_time
-            name: Heating Off (if heating now)
+            name: Heating End Time
           - type: divider
           - entity: sensor.home_model_time_to_cap_minutes
             name: Time To Cooling Cap (idle)
           - entity: sensor.home_model_time_to_floor_minutes
             name: Time To Heating Floor (idle)
+          - type: divider
+          - entity: sensor.home_model_ml_enhanced_prediction
+            name: ML Enhanced Next Prediction
+          - entity: sensor.home_model_comfort_violation
+            name: Comfort Band Violation Alert
       - type: entities
         title: Comfort Band
         show_header_toggle: false
@@ -132,9 +170,19 @@ sections:
           - entity: sensor.home_model_k_solar
             name: k_solar (°F/min per W/m²)
           - entity: sensor.home_model_samples
-            name: Samples
+            name: RC Model Samples
           - entity: sensor.home_model_fit_loss
-            name: Fit Loss
+            name: RC Model Fit Loss
+      - type: entities
+        title: Machine Learning Status
+        show_header_toggle: false
+        entities:
+          - entity: sensor.home_model_ml_status
+            name: ML Training Status
+          - entity: sensor.home_model_comfort_score
+            name: Current Comfort Score
+          - entity: sensor.home_model_energy_efficiency
+            name: Energy Efficiency Score
       - type: glance
         title: Short-Horizon Checkpoints
         entities:
