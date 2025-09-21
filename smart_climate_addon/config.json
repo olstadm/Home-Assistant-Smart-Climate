@@ -22,7 +22,8 @@
     "accuweather_api_key": "",
     "accuweather_location_key": "",
     "ml_training_enabled": true,
-    "ml_training_interval_hours": 1
+    "ml_training_interval_hours": 1,
+    "debug": false
   },
   "schema": {
     "indoor_temperature_sensor": "str",
@@ -38,7 +39,8 @@
     "accuweather_api_key": "str?",
     "accuweather_location_key": "str?",
     "ml_training_enabled": "bool",
-    "ml_training_interval_hours": "int(1,24)"
+    "ml_training_interval_hours": "int(1,24)",
+    "debug": "bool"
   },
   "ports": {
     "8099": 8099
