@@ -111,123 +111,28 @@ class ClimateForecaster:
         self.ml_training_enabled = config.get('ml_training_enabled', True)
         self.ml_training_interval = config.get('ml_training_interval_hours', 1)
         
-        # Helper entities for advanced parameters
-        self.helper_entities = config.get('helper_entities', {})
-        self.advanced_params = config.get('advanced_params', {})
+        # Advanced RC model parameters from configuration
+        self.tau_hours = config.get('tau_hours', 2.0)
+        self.forgetting_factor = config.get('forgetting_factor', 0.99)
+        self.bias = config.get('bias', 0.0)
+        self.comfort_cap = config.get('comfort_cap', self.comfort_max_temp)
+        self.heat_min_f = config.get('heat_min_f', self.comfort_min_temp)
+        self.k_heat = config.get('k_heat', 0.5)
+        self.k_cool = config.get('k_cool', -0.5)
+        self.recommendation_cooldown = config.get('recommendation_cooldown', 30.0)
         
-        # Advanced RC model parameters with helper entity support
-        self.tau_hours = self.advanced_params.get('tau_hours', 2.0)  # Default 2 hours
-        self.forgetting_factor = self.advanced_params.get('forgetting_factor', 0.99)
-        self.bias = self.advanced_params.get('bias', 0.0)
-        self.comfort_cap = self.advanced_params.get('comfort_cap', self.comfort_max_temp)
-        self.heat_min_f = self.advanced_params.get('heat_min_f', self.comfort_min_temp)
-        self.k_heat = self.advanced_params.get('k_heat', 0.5)  # Default heat gain
-        self.k_cool = self.advanced_params.get('k_cool', -0.5)  # Default cool gain
-        self.recommendation_cooldown = self.advanced_params.get('recommendation_cooldown', 30.0)  # minutes
+        # Update RC model parameters with configured values
+        self.theta[1] = self.k_heat  # Heat gain coefficient
+        self.theta[2] = self.k_cool  # Cool gain coefficient
+        self.theta[3] = self.bias    # Temperature bias
         
         logger.info("Climate forecaster initialized")
         logger.info(f"Indoor sensor: {self.indoor_temp_sensor}")
         logger.info(f"Outdoor sensor: {self.outdoor_temp_sensor}")
         logger.info(f"Climate entity: {self.climate_entity}")
         logger.info(f"ML training enabled: {self.ml_training_enabled}")
-        
-        # Log advanced parameters if configured
-        if self.advanced_params:
-            logger.info("Advanced parameters from helper entities:")
-            for param, value in self.advanced_params.items():
-                logger.info(f"  - {param}: {value}")
-        
-        # Log helper entity mappings if debug mode
-        debug_mode = os.environ.get('DEBUG_MODE', 'false').lower() == 'true'
-        if debug_mode and self.helper_entities:
-            logger.debug("Helper entity mappings available:")
-            for key, entity_id in self.helper_entities.items():
-                if entity_id:
-                    logger.debug(f"  - {key}: {entity_id}")
-    
-    async def _update_helper_parameters(self):
-        """Update configuration parameters from helper entities."""
-        if not self.helper_entities:
-            return
-        
-        logger.debug("Checking helper entities for parameter updates...")
-        
-        try:
-            # Update basic configuration parameters
-            basic_helpers = {
-                'forecast_hours': ('forecast_hours', int, 1, 24),
-                'learning_enabled': ('learning_enabled', bool, None, None),
-            }
-            
-            for helper_key, (param_key, param_type, min_val, max_val) in basic_helpers.items():
-                entity_id = self.helper_entities.get(helper_key, '')
-                if entity_id:
-                    try:
-                        state = await self.ha_client.get_state(entity_id)
-                        if state and 'state' in state and state['state'] not in ('unknown', 'unavailable', ''):
-                            raw_value = state['state']
-                            
-                            if param_type == bool:
-                                if isinstance(raw_value, str):
-                                    new_value = raw_value.lower() in ('true', 'on', '1', 'yes')
-                                else:
-                                    new_value = bool(raw_value)
-                            elif param_type == int:
-                                new_value = int(float(raw_value))
-                                if min_val is not None and new_value < min_val:
-                                    new_value = min_val
-                                if max_val is not None and new_value > max_val:
-                                    new_value = max_val
-                            else:
-                                new_value = raw_value
-                            
-                            old_value = getattr(self, param_key)
-                            if old_value != new_value:
-                                setattr(self, param_key, new_value)
-                                logger.info(f"Updated {param_key}: {old_value} → {new_value} (from {entity_id})")
-                    except Exception as e:
-                        logger.debug(f"Could not read helper {entity_id}: {e}")
-            
-            # Update advanced RC model parameters
-            advanced_helpers = {
-                'tau_hours': ('tau_hours', float, self.MIN_TAU_H, self.MAX_TAU_H),
-                'forgetting_factor': ('forgetting_factor', float, 0.8, 1.0),
-                'bias': ('bias', float, self.MIN_B, self.MAX_B),
-                'comfort_cap': ('comfort_cap', float, 70.0, 95.0),
-                'heat_min_f': ('heat_min_f', float, 50.0, 80.0),
-                'k_heat': ('k_heat', float, self.MIN_KH, self.MAX_KH),
-                'k_cool': ('k_cool', float, self.MIN_KC, self.MAX_KC),
-                'recommendation_cooldown': ('recommendation_cooldown', float, 1.0, 120.0),
-            }
-            
-            for helper_key, (param_key, param_type, min_val, max_val) in advanced_helpers.items():
-                entity_id = self.helper_entities.get(helper_key, '')
-                if entity_id:
-                    try:
-                        state = await self.ha_client.get_state(entity_id)
-                        if state and 'state' in state and state['state'] not in ('unknown', 'unavailable', ''):
-                            raw_value = float(state['state'])
-                            
-                            # Apply bounds
-                            new_value = max(min_val, min(max_val, raw_value))
-                            
-                            old_value = getattr(self, param_key)
-                            if abs(old_value - new_value) > 0.001:  # Threshold for float comparison
-                                setattr(self, param_key, new_value)
-                                logger.info(f"Updated {param_key}: {old_value:.3f} → {new_value:.3f} (from {entity_id})")
-                                
-                                # Update RC model theta if it's a model parameter
-                                if param_key == 'k_heat':
-                                    self.theta[1] = new_value
-                                elif param_key == 'k_cool':
-                                    self.theta[2] = new_value
-                                elif param_key == 'bias':
-                                    self.theta[3] = new_value
-                    except Exception as e:
-                        logger.debug(f"Could not read advanced helper {entity_id}: {e}")
-        
-        except Exception as e:
-            logger.warning(f"Error updating helper parameters: {e}")
+        logger.info(f"Advanced parameters: tau_hours={self.tau_hours:.1f}, forgetting_factor={self.forgetting_factor:.3f}")
+        logger.info(f"RC model coefficients: k_heat={self.k_heat:.2f}, k_cool={self.k_cool:.2f}, bias={self.bias:.3f}")
     
     async def run_forecast_loop(self):
         """Main forecasting loop."""
@@ -254,14 +159,8 @@ class ClimateForecaster:
     
     async def _forecast_loop(self):
         """Main forecasting update loop."""
-        helper_update_counter = 0
         while True:
             try:
-                # Update helper parameters every 10 forecast cycles (to avoid excessive API calls)
-                if helper_update_counter % 10 == 0:
-                    await self._update_helper_parameters()
-                helper_update_counter += 1
-                
                 await self._update_forecast()
                 await asyncio.sleep(self.update_interval * 60)  # Convert minutes to seconds
             except Exception as e:
@@ -699,10 +598,9 @@ class ClimateForecaster:
             )
             
             # Publish RC model parameters
-            rc_params = forecast_data.get('rc_parameters', {})
             await self.ha_client.set_state(
                 "sensor.smart_climate_tau_hours",
-                rc_params.get('tau_hours', 1.0),
+                self.tau_hours,
                 {
                     "friendly_name": "Smart Climate Tau Hours",
                     "unit_of_measurement": "h"
@@ -711,7 +609,7 @@ class ClimateForecaster:
             
             await self.ha_client.set_state(
                 "sensor.smart_climate_k_heat",
-                rc_params.get('k_heat', 0.0),
+                self.k_heat,
                 {
                     "friendly_name": "Smart Climate K Heat"
                 }
@@ -719,16 +617,15 @@ class ClimateForecaster:
             
             await self.ha_client.set_state(
                 "sensor.smart_climate_k_cool",
-                rc_params.get('k_cool', 0.0),
+                self.k_cool,
                 {
                     "friendly_name": "Smart Climate K Cool"
                 }
             )
             
-            # Publish additional helper-driven parameters
             await self.ha_client.set_state(
                 "sensor.smart_climate_bias",
-                getattr(self, 'bias', 0.0),
+                self.bias,
                 {
                     "friendly_name": "Smart Climate Model Bias",
                     "unit_of_measurement": "°F"
@@ -737,7 +634,7 @@ class ClimateForecaster:
             
             await self.ha_client.set_state(
                 "sensor.smart_climate_forgetting_factor",
-                getattr(self, 'forgetting_factor', 0.99),
+                self.forgetting_factor,
                 {
                     "friendly_name": "Smart Climate Forgetting Factor"
                 }
@@ -745,7 +642,7 @@ class ClimateForecaster:
             
             await self.ha_client.set_state(
                 "sensor.smart_climate_comfort_cap",
-                getattr(self, 'comfort_cap', self.comfort_max_temp),
+                self.comfort_cap,
                 {
                     "friendly_name": "Smart Climate Comfort Cap",
                     "unit_of_measurement": "°F"
@@ -754,7 +651,7 @@ class ClimateForecaster:
             
             await self.ha_client.set_state(
                 "sensor.smart_climate_heat_min_f",
-                getattr(self, 'heat_min_f', self.comfort_min_temp),
+                self.heat_min_f,
                 {
                     "friendly_name": "Smart Climate Heat Minimum",
                     "unit_of_measurement": "°F"
@@ -763,23 +660,10 @@ class ClimateForecaster:
             
             await self.ha_client.set_state(
                 "sensor.smart_climate_recommendation_cooldown",
-                getattr(self, 'recommendation_cooldown', 30.0),
+                self.recommendation_cooldown,
                 {
                     "friendly_name": "Smart Climate Recommendation Cooldown",
                     "unit_of_measurement": "min"
-                }
-            )
-            
-            # Publish helper entity status
-            helper_status = "Connected" if self.helper_entities else "Not configured"
-            active_helpers = sum(1 for entity_id in self.helper_entities.values() if entity_id)
-            await self.ha_client.set_state(
-                "sensor.smart_climate_helper_status",
-                helper_status,
-                {
-                    "friendly_name": "Smart Climate Helper Status",
-                    "helper_entities_configured": active_helpers,
-                    "total_helpers": len(self.helper_entities)
                 }
             )
             

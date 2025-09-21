@@ -67,7 +67,29 @@ All configuration is now done through the **Home Assistant UI** with intelligent
 | `ml_training_enabled` | bool | `true` | Enable ML model training |
 | `ml_training_interval_hours` | int | `1` | ML model retraining interval (1-24 hours) |
 | `debug` | bool | `false` | Enable debug logging and error diagnostics |
-| `ml_training_interval_hours` | int | `1` | ML training interval in hours (1-24) |
+
+### Advanced RC Model Parameters
+
+These parameters allow fine-tuning of the thermal RC model for your specific home:
+
+| Option | Type | Default | Range | Description |
+|--------|------|---------|-------|-------------|
+| `tau_hours` | float | `2.0` | 0.5-72.0 | Thermal time constant (hours) - how quickly your home responds to temperature changes |
+| `forgetting_factor` | float | `0.99` | 0.8-1.0 | Learning rate for model adaptation (closer to 1.0 = slower adaptation) |
+| `bias` | float | `0.0` | -0.2-0.2 | Temperature bias correction (°F) |
+| `comfort_cap` | float | `80.0` | 70.0-95.0 | Upper comfort temperature limit (°F) |
+| `heat_min_f` | float | `62.0` | 50.0-80.0 | Minimum heating temperature (°F) |
+| `k_heat` | float | `0.5` | 0.0-2.0 | Heat gain coefficient - how much heating affects temperature |
+| `k_cool` | float | `-0.5` | -2.0-0.0 | Cooling gain coefficient - how much cooling affects temperature |
+| `recommendation_cooldown` | float | `30.0` | 1.0-120.0 | Minimum time between recommendations (minutes) |
+
+### Configuration Benefits
+
+- **Complete Standalone Operation**: No dependencies on Home Assistant helper entities
+- **UI-Based Configuration**: All parameters configurable through the Home Assistant add-on interface
+- **Real-time Updates**: Parameter changes take effect without restarting the add-on
+- **Intelligent Validation**: Parameter bounds checking prevents invalid configurations
+- **Advanced Tuning**: Fine-tune the RC model for your home's specific thermal characteristics
 
 ## Generated Sensors
 
@@ -87,6 +109,11 @@ The add-on creates the following sensors in Home Assistant:
 - `sensor.smart_climate_tau_hours` - Building time constant (hours)
 - `sensor.smart_climate_k_heat` - Heating coefficient
 - `sensor.smart_climate_k_cool` - Cooling coefficient
+- `sensor.smart_climate_bias` - Model temperature bias (°F)
+- `sensor.smart_climate_forgetting_factor` - Learning rate factor
+- `sensor.smart_climate_comfort_cap` - Comfort cap temperature (°F)
+- `sensor.smart_climate_heat_min_f` - Heating minimum temperature (°F)
+- `sensor.smart_climate_recommendation_cooldown` - Recommendation cooldown (minutes)
 
 ## Dashboard Integration
 
@@ -136,56 +163,6 @@ To use AccuWeather weather forecasts:
 3. Configure in add-on options
 4. Weather data will enhance predictions automatically
 
-## Helper Entity Integration
-
-The Smart Climate add-on supports reading configuration from Home Assistant helper entities for dynamic parameter adjustment. This allows real-time tuning without restarting the add-on.
-
-### Supported Helper Entities
-
-#### Forecast / Weather Configuration
-- `input_text.home_forecast` - Custom forecast data
-- `input_text.accuweather_location_key` - AccuWeather location key override
-- `input_text.accuweather_token` - AccuWeather API key override
-- `input_number.home_model_forecast_hours` - Forecast hours (1-24)
-
-#### Sensor Configuration
-- `input_text.home_model_climate_entity` - Climate entity override
-- `input_text.home_model_outdoor_sensor` - Outdoor temperature sensor override
-- `input_text.home_model_indoor_sensor` - Indoor temperature sensor override
-- `input_text.home_model_outdoor_humidity_entity` - Outdoor humidity sensor override
-- `input_text.home_model_indoor_humidity_entity` - Indoor humidity sensor override
-
-#### Advanced RC Model Parameters
-- `input_number.home_model_tau_hours` - Thermal time constant (0.5-72 hours)
-- `input_number.home_model_update_minutes` - Update interval (1-60 minutes)
-- `input_number.home_model_forgetting_factor` - Learning rate (0.8-1.0)
-- `input_number.home_model_bias` - Temperature bias (-0.2 to 0.2°F)
-- `input_number.home_model_comfort_cap` - Comfort cap temperature (70-95°F)
-- `input_number.home_model_heat_min_f` - Heating minimum temperature (50-80°F)
-- `input_number.home_model_k_heat` - Heat gain coefficient (0.0-2.0)
-- `input_number.home_model_k_cool` - Cool gain coefficient (-2.0-0.0)
-
-#### Control Parameters
-- `input_boolean.home_model_learning_enabled` - Enable/disable learning
-- `input_number.home_model_recommendation_cooldown` - Cooldown period (1-120 minutes)
-
-#### Storage
-- `input_text.home_model_storage` - Custom storage path
-
-### Usage
-
-1. **Create Helper Entities**: Create the desired helper entities in Home Assistant
-2. **Configure Values**: Set initial values through the Home Assistant UI
-3. **Dynamic Updates**: The add-on reads these values every 10 forecast cycles
-4. **Monitor Status**: Check `sensor.smart_climate_helper_status` for integration status
-
-### Benefits
-
-- **Real-time Tuning**: Adjust parameters without restarting the add-on
-- **Experimentation**: Test different RC model parameters easily
-- **Seasonal Adjustments**: Modify parameters based on weather or season
-- **Advanced Control**: Fine-tune the climate model for your home's characteristics
-
 ## Troubleshooting
 
 ### Add-on Won't Start
@@ -207,29 +184,6 @@ The Smart Climate add-on supports reading configuration from Home Assistant help
 - Install ApexCharts custom card: `https://github.com/RomRider/apexcharts-card`
 - Verify all sensor entities are available
 - Check for YAML syntax errors in dashboard configuration
-
-### Helper Entity Issues
-- **Helper entities not working**: Check `sensor.smart_climate_helper_status` for configuration status
-- **Parameters not updating**: Ensure helper entity values are valid numbers/strings, not "unknown" or "unavailable"
-- **Invalid parameter values**: The add-on applies bounds checking and will clamp values to safe ranges
-- **Debug helper reading**: Enable debug mode in add-on configuration to see helper entity read attempts
-- **Missing helper entities**: Helper entities are optional - the add-on will use default values if helpers don't exist
-
-### Container Startup Issues
-
-If the add-on fails to start with errors related to configuration or logging:
-
-1. **Enable Debug Mode**: Set the `debug` option to `true` in the add-on configuration to get detailed startup logs
-2. **Check Logs**: Navigate to **Supervisor** → **Add-on Store** → **Smart Climate Forecasting** → **Log** tab
-3. **Verify Configuration**: Ensure all required sensors and climate entities are properly configured and available
-4. **Supervisor Token**: The add-on requires Home Assistant supervisor API access - this should be automatic in most installations
-
-### Common Issues
-
-- **"Configuration file not found"**: Restart Home Assistant and the add-on
-- **"No supervisor token available"**: Check that you're running the add-on in a proper Home Assistant environment
-- **"Required configuration missing"**: Verify that indoor/outdoor temperature sensors and climate entity are set
-- **Python import errors**: The add-on will automatically install required dependencies on first start
 
 ## Performance
 
