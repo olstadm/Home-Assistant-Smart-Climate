@@ -34,7 +34,12 @@ log_warning() {
 DEBUG=$(bashio::config 'debug' 'false' 2>/dev/null || echo 'false')
 if [[ "${DEBUG}" == "true" ]]; then
     set -x
-    log_info "Debug mode enabled"
+    log_info "Debug mode enabled - verbose logging activated"
+    log_info "Bash version: ${BASH_VERSION}"
+    log_info "Shell options: $-"
+    export DEBUG_MODE="true" 
+else
+    export DEBUG_MODE="false"
 fi
 
 # Set log level
@@ -53,20 +58,17 @@ fi
 log_info "Loading configuration values..."
 
 # Validate required configuration exists first
-if ! bashio::config.exists 'indoor_temperature_sensor'; then
-    log_fatal "Required configuration 'indoor_temperature_sensor' is missing!"
-    exit 1
-fi
-
-if ! bashio::config.exists 'outdoor_temperature_sensor'; then
-    log_fatal "Required configuration 'outdoor_temperature_sensor' is missing!"
-    exit 1
-fi
-
-if ! bashio::config.exists 'climate_entity'; then
-    log_fatal "Required configuration 'climate_entity' is missing!"
-    exit 1
-fi
+log_info "Validating required configuration parameters..."
+required_configs=("indoor_temperature_sensor" "outdoor_temperature_sensor" "climate_entity")
+for config_key in "${required_configs[@]}"; do
+    if ! bashio::config.exists "$config_key"; then
+        log_fatal "Required configuration '$config_key' is missing!"
+        log_fatal "Please configure this parameter in the add-on settings"
+        exit 1
+    else
+        log_info "✓ Required config '$config_key' found"
+    fi
+done
 
 INDOOR_TEMP_SENSOR=$(bashio::config 'indoor_temperature_sensor')
 OUTDOOR_TEMP_SENSOR=$(bashio::config 'outdoor_temperature_sensor')
@@ -92,16 +94,22 @@ HASSIO_TOKEN="${HASSIO_TOKEN:-}"
 
 # Debug token availability
 if [[ -n "${SUPERVISOR_TOKEN}" ]]; then
-    log_info "SUPERVISOR_TOKEN is available"
+    log_info "✓ SUPERVISOR_TOKEN is available (length: ${#SUPERVISOR_TOKEN})"
 elif [[ -n "${HASSIO_TOKEN}" ]]; then
-    log_info "HASSIO_TOKEN is available"
+    log_info "✓ HASSIO_TOKEN is available (length: ${#HASSIO_TOKEN})"
 else
     log_warning "No supervisor tokens found in environment"
+    log_info "Available environment variables:"
+    env | grep -E "(SUPERVISOR|HASSIO|TOKEN)" | while read -r line; do
+        var_name=$(echo "$line" | cut -d'=' -f1)
+        log_info "  - $var_name"
+    done
 fi
 
 if [[ -z "$SUPERVISOR_TOKEN" ]] && [[ -z "$HASSIO_TOKEN" ]]; then
     log_fatal "No supervisor token available! Cannot communicate with Home Assistant."
     log_fatal "This add-on requires supervisor API access to function properly."
+    log_fatal "Please ensure you're running this as a Home Assistant add-on, not standalone."
     exit 1
 fi
 
@@ -121,19 +129,58 @@ export ACCUWEATHER_API_KEY
 export ACCUWEATHER_LOCATION_KEY
 export ML_TRAINING_ENABLED
 export ML_TRAINING_INTERVAL
+export DEBUG_MODE
 export SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN:-$HASSIO_TOKEN}"
 export HOME_ASSISTANT_URL="http://supervisor/core"
 export DATA_DIR="/data"
 export MODELS_DIR="/data/models"
 
+# Export helper entity names for dynamic reading
+log_info "Setting up helper entity mappings..."
+export HELPER_HOME_FORECAST="input_text.home_forecast"
+export HELPER_ACCUWEATHER_LOCATION_KEY="input_text.accuweather_location_key"
+export HELPER_ACCUWEATHER_TOKEN="input_text.accuweather_token"
+export HELPER_HOME_MODEL_FORECAST_HOURS="input_number.home_model_forecast_hours"
+export HELPER_HOME_MODEL_CLIMATE_ENTITY="input_text.home_model_climate_entity"
+export HELPER_HOME_MODEL_OUTDOOR_SENSOR="input_text.home_model_outdoor_sensor"
+export HELPER_HOME_MODEL_INDOOR_SENSOR="input_text.home_model_indoor_sensor"
+export HELPER_HOME_MODEL_OUTDOOR_HUMIDITY_ENTITY="input_text.home_model_outdoor_humidity_entity"
+export HELPER_HOME_MODEL_INDOOR_HUMIDITY_ENTITY="input_text.home_model_indoor_humidity_entity"
+export HELPER_HOME_MODEL_TAU_HOURS="input_number.home_model_tau_hours"
+export HELPER_HOME_MODEL_UPDATE_MINUTES="input_number.home_model_update_minutes"
+export HELPER_HOME_MODEL_FORGETTING_FACTOR="input_number.home_model_forgetting_factor"
+export HELPER_HOME_MODEL_BIAS="input_number.home_model_bias"
+export HELPER_HOME_MODEL_COMFORT_CAP="input_number.home_model_comfort_cap"
+export HELPER_HOME_MODEL_HEAT_MIN_F="input_number.home_model_heat_min_f"
+export HELPER_HOME_MODEL_K_HEAT="input_number.home_model_k_heat"
+export HELPER_HOME_MODEL_K_COOL="input_number.home_model_k_cool"
+export HELPER_HOME_MODEL_LEARNING_ENABLED="input_boolean.home_model_learning_enabled"
+export HELPER_HOME_MODEL_RECOMMENDATION_COOLDOWN="input_number.home_model_recommendation_cooldown"
+export HELPER_HOME_MODEL_STORAGE="input_text.home_model_storage"
+
 log_info "Configuration loaded successfully"
-log_info "Indoor temperature sensor: ${INDOOR_TEMP_SENSOR}"
-log_info "Outdoor temperature sensor: ${OUTDOOR_TEMP_SENSOR}"
-log_info "Climate entity: ${CLIMATE_ENTITY}"
-log_info "Learning enabled: ${LEARNING_ENABLED}"
-log_info "ML training enabled: ${ML_TRAINING_ENABLED}"
-log_info "Data directory: ${DATA_DIR}"
-log_info "Models directory: ${MODELS_DIR}"
+log_info "Core Sensors:"
+log_info "  - Indoor temperature sensor: ${INDOOR_TEMP_SENSOR}"
+log_info "  - Outdoor temperature sensor: ${OUTDOOR_TEMP_SENSOR}"
+log_info "  - Climate entity: ${CLIMATE_ENTITY}"
+log_info "Optional Sensors:"
+log_info "  - Indoor humidity sensor: ${INDOOR_HUMIDITY_SENSOR:-'not configured'}"
+log_info "  - Outdoor humidity sensor: ${OUTDOOR_HUMIDITY_SENSOR:-'not configured'}"
+log_info "Configuration:"
+log_info "  - Learning enabled: ${LEARNING_ENABLED}"
+log_info "  - ML training enabled: ${ML_TRAINING_ENABLED}"
+log_info "  - Forecast hours: ${FORECAST_HOURS}"
+log_info "  - Update interval: ${UPDATE_INTERVAL} minutes"
+log_info "  - Debug mode: ${DEBUG_MODE}"
+log_info "Storage:"
+log_info "  - Data directory: ${DATA_DIR}"
+log_info "  - Models directory: ${MODELS_DIR}"
+if [[ "${DEBUG_MODE}" == "true" ]]; then
+    log_info "Helper Entity Mappings (for dynamic reading):"
+    env | grep "^HELPER_" | sort | while read -r line; do
+        log_info "  - $line"
+    done
+fi
 
 # Create models directory if it doesn't exist
 log_info "Creating models directory..."

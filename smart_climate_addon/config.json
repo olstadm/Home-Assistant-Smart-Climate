@@ -48,6 +48,29 @@
   "ports_description": {
     "8099": "Smart Climate API port (optional)"
   },
+  "documentation": "https://github.com/olstadm/Home-Assistant-Smart-Climate/blob/main/README.md",
+  "helper_entities_supported": [
+    "input_text.home_forecast",
+    "input_text.accuweather_location_key", 
+    "input_text.accuweather_token",
+    "input_number.home_model_forecast_hours",
+    "input_text.home_model_climate_entity",
+    "input_text.home_model_outdoor_sensor",
+    "input_text.home_model_indoor_sensor",
+    "input_text.home_model_outdoor_humidity_entity",
+    "input_text.home_model_indoor_humidity_entity",
+    "input_number.home_model_tau_hours",
+    "input_number.home_model_update_minutes",
+    "input_number.home_model_forgetting_factor",
+    "input_number.home_model_bias",
+    "input_number.home_model_comfort_cap",
+    "input_number.home_model_heat_min_f",
+    "input_number.home_model_k_heat",
+    "input_number.home_model_k_cool",
+    "input_boolean.home_model_learning_enabled",
+    "input_number.home_model_recommendation_cooldown",
+    "input_text.home_model_storage"
+  ],
   "map": [
     "share:rw"
   ],
