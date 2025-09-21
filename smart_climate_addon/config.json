@@ -1,6 +1,6 @@
 {
   "name": "Smart Climate Forecasting",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "slug": "smart_climate",
   "description": "Advanced climate prediction and control using RC modeling with machine learning enhancement",
   "url": "https://github.com/olstadm/Home-Assistant-Smart-Climate",
