@@ -65,6 +65,8 @@ All configuration is now done through the **Home Assistant UI** with intelligent
 | `accuweather_api_key` | string | optional | AccuWeather API key |
 | `accuweather_location_key` | string | optional | AccuWeather location key |
 | `ml_training_enabled` | bool | `true` | Enable ML model training |
+| `ml_training_interval_hours` | int | `1` | ML model retraining interval (1-24 hours) |
+| `debug` | bool | `false` | Enable debug logging and error diagnostics |
 | `ml_training_interval_hours` | int | `1` | ML training interval in hours (1-24) |
 
 ## Generated Sensors
@@ -174,6 +176,33 @@ If migrating from the AppDaemon version:
 4. The add-on will create new sensor entities with `smart_climate_` prefix
 5. Update dashboard to use new sensor entities
 6. ML models will retrain automatically with historical data
+
+## Troubleshooting
+
+### Container Startup Issues
+
+If the add-on fails to start with errors related to configuration or logging:
+
+1. **Enable Debug Mode**: Set the `debug` option to `true` in the add-on configuration to get detailed startup logs
+2. **Check Logs**: Navigate to **Supervisor** → **Add-on Store** → **Smart Climate Forecasting** → **Log** tab
+3. **Verify Configuration**: Ensure all required sensors and climate entities are properly configured and available
+4. **Supervisor Token**: The add-on requires Home Assistant supervisor API access - this should be automatic in most installations
+
+### Common Issues
+
+- **"Configuration file not found"**: Restart Home Assistant and the add-on
+- **"No supervisor token available"**: Check that you're running the add-on in a proper Home Assistant environment
+- **"Required configuration missing"**: Verify that indoor/outdoor temperature sensors and climate entity are set
+- **Python import errors**: The add-on will automatically install required dependencies on first start
+
+### Debug Information
+
+When debug mode is enabled, the add-on will provide detailed information about:
+- Configuration loading process
+- Home Assistant API connectivity
+- Sensor entity validation
+- ML model initialization
+- Error diagnostics
 
 ## Support
 
