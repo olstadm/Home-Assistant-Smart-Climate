@@ -1,4 +1,13 @@
 # Enhanced "HomeForecast" with cooling & heating planning, forecast, enthalpy, solar bias, and stability improvements
+# Improvements include:
+# - Fixed critical missing return statement in _build_drivers()
+# - Added comprehensive input validation and error handling
+# - Enhanced accuracy tracking with better metrics
+# - Added comfort and energy efficiency scoring
+# - Completed series publishing with full forecasting capabilities
+# - Added time-to-limit predictions for better HVAC planning
+# - Improved solar irradiance and humidity handling
+# - Better parameter constraint management with debugging logs
 import appdaemon.plugins.hass.hassapi as hass
 from datetime import datetime, timezone, timedelta
 import math
@@ -235,6 +244,31 @@ class HomeWeatherPredicter(hass.Hass):
             base_score += min(10.0, solar_irradiance / 50.0)  # Up to 10 point bonus
         
         return round(min(100.0, base_score), 1)
+    
+    def _seasonal_learning_adjustment(self, lambda_base):
+        """Adjust learning rate based on seasonal patterns"""
+        now = datetime.now()
+        month = now.month
+        
+        # Increase learning rate during seasonal transitions (spring/fall)
+        # when home thermal characteristics might change more rapidly
+        if month in [3, 4, 5, 9, 10, 11]:  # Spring and Fall
+            seasonal_factor = 0.98  # Slightly faster learning
+        elif month in [12, 1, 2]:  # Winter
+            seasonal_factor = 1.0   # Normal learning rate
+        else:  # Summer (6, 7, 8)
+            seasonal_factor = 1.0   # Normal learning rate
+        
+        # Adjust based on number of samples - learn faster early on
+        if self.samples < 100:
+            sample_factor = 0.95  # Faster learning for first 100 samples
+        elif self.samples < 500:
+            sample_factor = 0.98  # Moderate learning for next 400 samples
+        else:
+            sample_factor = 1.0   # Normal learning rate after 500 samples
+        
+        adjusted_lambda = min(0.999, lambda_base * seasonal_factor * sample_factor)
+        return adjusted_lambda
 
     # --- State Persistence ---
     def _load_model_state(self):
@@ -511,7 +545,9 @@ class HomeWeatherPredicter(hass.Hass):
             
             err = None
             if learning_enabled:
-                self.theta, self.P, err = self._rls_update(self.theta, self.P, x, y, lam)
+                # Apply seasonal learning adjustment
+                adjusted_lambda = self._seasonal_learning_adjustment(lam)
+                self.theta, self.P, err = self._rls_update(self.theta, self.P, x, y, adjusted_lambda)
                 # Apply constraints with improved bounds
                 self.theta[0] = clip(self.theta[0], 1.0 / (self.MAX_TAU_H * 60.0), 1.0 / (self.MIN_TAU_H * 60.0))
                 self.theta[1] = clip(self.theta[1], self.MIN_KH, self.MAX_KH)
