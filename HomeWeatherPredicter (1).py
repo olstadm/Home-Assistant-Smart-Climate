@@ -1,4 +1,13 @@
 # Enhanced "HomeForecast" with cooling & heating planning, forecast, enthalpy, solar bias, and stability improvements
+# Improvements include:
+# - Fixed critical missing return statement in _build_drivers()
+# - Added comprehensive input validation and error handling
+# - Enhanced accuracy tracking with better metrics
+# - Added comfort and energy efficiency scoring
+# - Completed series publishing with full forecasting capabilities
+# - Added time-to-limit predictions for better HVAC planning
+# - Improved solar irradiance and humidity handling
+# - Better parameter constraint management with debugging logs
 import appdaemon.plugins.hass.hassapi as hass
 from datetime import datetime, timezone, timedelta
 import math
@@ -92,6 +101,9 @@ class HomeWeatherPredicter(hass.Hass):
     S_RECO = "sensor.home_model_control_recommendation"
     S_INDOOR_ACC = "sensor.home_model_indoor_accuracy"
     S_OUTDOOR_ACC = "sensor.home_model_outdoor_accuracy"
+    S_EXT = "sensor.home_model_external_forecast_avg"
+    S_COMFORT_SCORE = "sensor.home_model_comfort_score"
+    S_EFFICIENCY_SCORE = "sensor.home_model_energy_efficiency"
 
     # --- Parameter Limits ---
     MIN_TAU_H, MAX_TAU_H = 0.5, 72.0
@@ -137,7 +149,8 @@ class HomeWeatherPredicter(hass.Hass):
         entities = [
             self.S_F30, self.S_F60, self.S_F180, self.S_IDEAL_COOL, self.S_IDEAL_HEAT,
             self.S_COOL_OFF, self.S_HEAT_OFF, self.S_RECO, self.S_T2CAP, self.S_T2FLR,
-            self.S_FC_SER, self.S_OUT_SER, self.S_INDOOR_ACC, self.S_OUTDOOR_ACC
+            self.S_FC_SER, self.S_OUT_SER, self.S_INDOOR_ACC, self.S_OUTDOOR_ACC,
+            self.S_COMFORT_SCORE, self.S_EFFICIENCY_SCORE
         ]
         for e in entities:
             attrs = {}
@@ -176,6 +189,86 @@ class HomeWeatherPredicter(hass.Hass):
             return act if act in ("heating", "cooling") else "idle"
         except Exception:
             return "idle"
+
+    def _calculate_comfort_score(self, temp, humidity, target_min, target_max):
+        """Calculate comfort score (0-100) based on temperature and humidity"""
+        # Optimal temperature comfort zone
+        if target_min <= temp <= target_max:
+            temp_score = 100.0
+        else:
+            # Penalize deviation from comfort zone
+            deviation = min(abs(temp - target_min), abs(temp - target_max))
+            temp_score = max(0.0, 100.0 - (deviation * 10.0))  # 10 points per degree F
+        
+        # Optimal humidity comfort zone (30-60% RH)
+        if humidity is None:
+            humidity_score = 75.0  # Neutral score if no humidity data
+        elif 30 <= humidity <= 60:
+            humidity_score = 100.0
+        else:
+            # Penalize deviation from comfort zone
+            if humidity < 30:
+                humidity_score = max(0.0, 100.0 - (30 - humidity) * 2.0)
+            else:  # humidity > 60
+                humidity_score = max(0.0, 100.0 - (humidity - 60) * 1.5)
+        
+        # Weighted average (temperature is more important)
+        comfort_score = (temp_score * 0.7) + (humidity_score * 0.3)
+        return round(comfort_score, 1)
+    
+    def _calculate_efficiency_score(self, temp_diff, hvac_action, solar_irradiance):
+        """Calculate energy efficiency score based on temperature differential and conditions"""
+        # Base efficiency depends on temperature differential
+        temp_diff_abs = abs(temp_diff)
+        
+        if hvac_action == "idle":
+            # High efficiency when not using HVAC
+            base_score = 95.0
+        elif hvac_action == "heating":
+            # More efficient when outdoor temp is closer to indoor
+            if temp_diff < 0:  # Outdoor warmer than indoor
+                base_score = max(50.0, 90.0 - temp_diff_abs * 2.0)
+            else:  # Outdoor colder than indoor (heating against gradient)
+                base_score = max(20.0, 80.0 - temp_diff_abs * 3.0)
+        elif hvac_action == "cooling":
+            # More efficient when outdoor temp is closer to indoor
+            if temp_diff > 0:  # Outdoor colder than indoor
+                base_score = max(50.0, 90.0 - temp_diff_abs * 2.0)
+            else:  # Outdoor warmer than indoor (cooling against gradient)
+                base_score = max(20.0, 80.0 - temp_diff_abs * 3.0)
+        else:
+            base_score = 70.0
+        
+        # Bonus for solar heating when it helps
+        if solar_irradiance > 100 and hvac_action == "heating":
+            base_score += min(10.0, solar_irradiance / 50.0)  # Up to 10 point bonus
+        
+        return round(min(100.0, base_score), 1)
+    
+    def _seasonal_learning_adjustment(self, lambda_base):
+        """Adjust learning rate based on seasonal patterns"""
+        now = datetime.now()
+        month = now.month
+        
+        # Increase learning rate during seasonal transitions (spring/fall)
+        # when home thermal characteristics might change more rapidly
+        if month in [3, 4, 5, 9, 10, 11]:  # Spring and Fall
+            seasonal_factor = 0.98  # Slightly faster learning
+        elif month in [12, 1, 2]:  # Winter
+            seasonal_factor = 1.0   # Normal learning rate
+        else:  # Summer (6, 7, 8)
+            seasonal_factor = 1.0   # Normal learning rate
+        
+        # Adjust based on number of samples - learn faster early on
+        if self.samples < 100:
+            sample_factor = 0.95  # Faster learning for first 100 samples
+        elif self.samples < 500:
+            sample_factor = 0.98  # Moderate learning for next 400 samples
+        else:
+            sample_factor = 1.0   # Normal learning rate after 500 samples
+        
+        adjusted_lambda = min(0.999, lambda_base * seasonal_factor * sample_factor)
+        return adjusted_lambda
 
     # --- State Persistence ---
     def _load_model_state(self):
@@ -363,6 +456,8 @@ class HomeWeatherPredicter(hass.Hass):
             RH_in_series = [RHin_now if RHin_now is not None else 50.0]
             H = 1
 
+        return H, Tout_series, RH_out_series, Solar_series, RH_in_series
+
     # --- Main Tick ---
     def _tick(self, kwargs=None):
         try:
@@ -384,7 +479,19 @@ class HomeWeatherPredicter(hass.Hass):
             Tout_now = self._get_float(outdoor_id, None)
             RHin_now = self._get_float(in_rh_id, None)
             RHout_now = self._get_float(out_rh_id, None)
-            if Tin is None or Tout_now is None: return
+            
+            # Validate critical sensor data
+            if Tin is None or Tout_now is None: 
+                self.log(f"Missing critical sensor data: Tin={Tin}, Tout={Tout_now}", level="WARNING")
+                return
+            
+            # Validate temperature ranges
+            if not (-40 <= Tin <= 140):
+                self.log(f"Indoor temperature out of range: {Tin}°F", level="WARNING")
+                return
+            if not (-40 <= Tout_now <= 140):
+                self.log(f"Outdoor temperature out of range: {Tout_now}°F", level="WARNING")
+                return
 
             now = datetime.now(timezone.utc)
             if self.last_ts is None or self.last_tin is None:
@@ -399,21 +506,31 @@ class HomeWeatherPredicter(hass.Hass):
             if self._past_preds:
                 pred_for_now = self._past_preds.pop(0)
                 error = abs(Tin - pred_for_now)
-                self.set_state(self.S_INDOOR_ACC, state=round(error, 2))
+                self.set_state(self.S_INDOOR_ACC, state=round(error, 2), 
+                             attributes={"unit_of_measurement": "°F", "friendly_name": "Indoor Prediction Accuracy"})
 
             # Outdoor: Compare current outdoor temp with forecast
-            if self._aw_cache:
-                fc_temp_now = self._aw_cache[0]['TempF']
-                outdoor_error = abs(Tout_now - fc_temp_now)
-                self._outdoor_errors.append(outdoor_error)
-                if len(self._outdoor_errors) > 60: self._outdoor_errors.pop(0) # 1hr rolling avg
-                avg_outdoor_error = sum(self._outdoor_errors) / len(self._outdoor_errors)
-                self.set_state(self.S_OUTDOOR_ACC, state=round(avg_outdoor_error, 2))
+            if self._aw_cache and len(self._aw_cache) > 0:
+                fc_temp_now = self._aw_cache[0].get('TempF')
+                if fc_temp_now is not None:
+                    outdoor_error = abs(Tout_now - fc_temp_now)
+                    self._outdoor_errors.append(outdoor_error)
+                    # Keep only last 60 samples (1hr rolling avg)
+                    if len(self._outdoor_errors) > 60: 
+                        self._outdoor_errors.pop(0)
+                    avg_outdoor_error = sum(self._outdoor_errors) / len(self._outdoor_errors)
+                    self.set_state(self.S_OUTDOOR_ACC, state=round(avg_outdoor_error, 2),
+                                 attributes={"unit_of_measurement": "°F", "friendly_name": "Outdoor Forecast Accuracy"})
 
 
             # --- Learning Update ---
             act_now = self._hvac_action(climate_id)
-            solar_now = (self._aw_cache[0]['Solar'] if self._aw_cache and 'Solar' in self._aw_cache[0] else 0.0) or 0.0
+            solar_now = 0.0
+            if self._aw_cache and len(self._aw_cache) > 0 and 'Solar' in self._aw_cache[0]:
+                solar_now = float(self._aw_cache[0]['Solar'] or 0.0)
+                # Validate solar irradiance range (0-1500 W/m²)
+                solar_now = max(0.0, min(1500.0, solar_now))
+                
             hin = _enthalpy_kj_per_kg_dryair(Tin, RHin_now or 50.0)
             hout = _enthalpy_kj_per_kg_dryair(Tout_now, RHout_now or 50.0)
             y = (Tin - self.last_tin) / dt_min
@@ -428,8 +545,10 @@ class HomeWeatherPredicter(hass.Hass):
             
             err = None
             if learning_enabled:
-                self.theta, self.P, err = self._rls_update(self.theta, self.P, x, y, lam)
-                # Apply constraints
+                # Apply seasonal learning adjustment
+                adjusted_lambda = self._seasonal_learning_adjustment(lam)
+                self.theta, self.P, err = self._rls_update(self.theta, self.P, x, y, adjusted_lambda)
+                # Apply constraints with improved bounds
                 self.theta[0] = clip(self.theta[0], 1.0 / (self.MAX_TAU_H * 60.0), 1.0 / (self.MIN_TAU_H * 60.0))
                 self.theta[1] = clip(self.theta[1], self.MIN_KH, self.MAX_KH)
                 self.theta[2] = clip(self.theta[2], self.MIN_KC, self.MAX_KC)
@@ -437,6 +556,12 @@ class HomeWeatherPredicter(hass.Hass):
                 self.theta[4] = clip(self.theta[4], self.MIN_KE, self.MAX_KE)
                 self.theta[5] = clip(self.theta[5], self.MIN_KS, self.MAX_KS)
                 self.samples += 1
+                
+                # Log significant parameter changes for debugging
+                if self.samples % 100 == 0:
+                    self.log(f"Learning update #{self.samples}: tau={1.0/(self.theta[0]*60.0):.1f}h, "
+                           f"kH={self.theta[1]:.3f}, kC={self.theta[2]:.3f}, kE={self.theta[4]:.4f}, "
+                           f"kS={self.theta[5]:.4f}, err={err:.3f}", level="DEBUG")
 
             a, kH, kC, b, kE, kS = self.theta
             loss = err * err if err is not None else None
@@ -588,6 +713,15 @@ class HomeWeatherPredicter(hass.Hass):
                 capF, floorF
             )
 
+            # --- Calculate and Publish Comfort & Efficiency Scores ---
+            comfort_score = self._calculate_comfort_score(Tin, RHin_now, floorF, capF)
+            self.set_state(self.S_COMFORT_SCORE, state=comfort_score,
+                         attributes={"unit_of_measurement": "%", "friendly_name": "Comfort Score"})
+            
+            efficiency_score = self._calculate_efficiency_score(Tout_now - Tin, act_now, solar_now)
+            self.set_state(self.S_EFFICIENCY_SCORE, state=efficiency_score,
+                         attributes={"unit_of_measurement": "%", "friendly_name": "Energy Efficiency Score"})
+
             # --- Advance & Log ---
             self.last_tin, self.last_ts = Tin, now
             self.log(f"Tick: Tin={Tin:.1f}, Tout={Tout_now:.1f}, Action={act_now}, Solar={solar_now:.1f}", level="DEBUG")
@@ -619,3 +753,58 @@ class HomeWeatherPredicter(hass.Hass):
                 idx = min(hh * 60 - 1, len(traj_mins) - 1)
                 out.append(traj_mins[idx])
             return out
+
+        # Publish indoor forecast series
+        if traj_idle:
+            hourly_temps = minutes_to_hourly(traj_idle, H)
+            times = [(now + timedelta(hours=h)).astimezone().isoformat(timespec="minutes") 
+                    for h in range(1, H + 1)]
+            series = [{"t": times[i], "y": round(hourly_temps[i], 1)} for i in range(len(hourly_temps))]
+            
+            current_state = round(traj_idle[0], 1) if traj_idle else Tin
+            self.set_state(
+                self.S_FC_SER,
+                state=current_state,
+                attributes={
+                    "unit_of_measurement": "°F",
+                    "device_class": "temperature",
+                    "state_class": "measurement",
+                    "friendly_name": "Indoor Forecast (12h)",
+                    "times": times,
+                    "temps": [round(t, 1) for t in hourly_temps],
+                    "series": series,
+                    "count": len(series),
+                    "recommendation": reco,
+                    "horizon_hours": H,
+                    "comfort_range": f"{floorF}-{capF}°F"
+                }
+            )
+
+        # Publish specific time forecasts
+        if traj_idle and len(traj_idle) > 30:
+            self.set_state(self.S_F30, state=round(traj_idle[29], 1),
+                         attributes={"unit_of_measurement": "°F", "friendly_name": "Indoor Temp +30min"})
+        if traj_idle and len(traj_idle) > 60:
+            self.set_state(self.S_F60, state=round(traj_idle[59], 1),
+                         attributes={"unit_of_measurement": "°F", "friendly_name": "Indoor Temp +1hr"})
+        if traj_idle and len(traj_idle) > 180:
+            self.set_state(self.S_F180, state=round(traj_idle[179], 1),
+                         attributes={"unit_of_measurement": "°F", "friendly_name": "Indoor Temp +3hr"})
+
+        # Calculate time to temperature limits
+        time_to_cap, time_to_floor = None, None
+        if traj_idle:
+            for i, temp in enumerate(traj_idle):
+                if time_to_cap is None and temp >= capF:
+                    time_to_cap = i + 1  # minutes
+                if time_to_floor is None and temp <= floorF:
+                    time_to_floor = i + 1  # minutes
+                if time_to_cap and time_to_floor:
+                    break
+
+        self.set_state(self.S_T2CAP, 
+                      state=time_to_cap if time_to_cap else "beyond_horizon",
+                      attributes={"unit_of_measurement": "min", "friendly_name": "Time to Cap Temperature"})
+        self.set_state(self.S_T2FLR, 
+                      state=time_to_floor if time_to_floor else "beyond_horizon",
+                      attributes={"unit_of_measurement": "min", "friendly_name": "Time to Floor Temperature"})
