@@ -6,22 +6,49 @@ import sys
 from pathlib import Path
 
 
+def test_repository_json():
+    """Test that repository.json is valid for Home Assistant."""
+    try:
+        with open('repository.json', 'r') as f:
+            repo_config = json.load(f)
+        
+        required_keys = ['name', 'url', 'maintainer']
+        missing_keys = [key for key in required_keys if key not in repo_config]
+        
+        if missing_keys:
+            print(f"❌ Missing required keys in repository.json: {missing_keys}")
+            return False
+        
+        print("✅ repository.json is valid")
+        return True
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ Invalid JSON in repository.json: {e}")
+        return False
+    except FileNotFoundError:
+        print("❌ repository.json not found")
+        return False
+
+
 def test_addon_structure():
     """Test that all required add-on files exist."""
-    required_files = [
-        'config.json',
-        'Dockerfile',
-        'run.sh',
-        'smart_climate/__init__.py',
-        'smart_climate/main.py',
-        'smart_climate/ha_client.py',
-        'smart_climate/climate_forecaster.py',
-        'smart_climate/ml_climate_enhancer.py',
-        'requirements.txt'
+    # Test repository structure
+    repo_files = ['repository.json']
+    addon_files = [
+        'smart_climate_addon/config.json',
+        'smart_climate_addon/Dockerfile',
+        'smart_climate_addon/run.sh',
+        'smart_climate_addon/smart_climate/__init__.py',
+        'smart_climate_addon/smart_climate/main.py',
+        'smart_climate_addon/smart_climate/ha_client.py',
+        'smart_climate_addon/smart_climate/climate_forecaster.py',
+        'smart_climate_addon/smart_climate/ml_climate_enhancer.py',
+        'smart_climate_addon/requirements.txt'
     ]
     
+    all_files = repo_files + addon_files
     missing_files = []
-    for file_path in required_files:
+    for file_path in all_files:
         if not Path(file_path).exists():
             missing_files.append(file_path)
     
@@ -29,14 +56,15 @@ def test_addon_structure():
         print(f"❌ Missing required files: {missing_files}")
         return False
     
-    print("✅ All required add-on files present")
+    print("✅ All required add-on repository files present")
     return True
 
 
 def test_config_json():
     """Test that config.json is valid."""
+    config_path = 'smart_climate_addon/config.json'
     try:
-        with open('config.json', 'r') as f:
+        with open(config_path, 'r') as f:
             config = json.load(f)
         
         required_keys = ['name', 'version', 'slug', 'description', 'arch', 'options', 'schema']
@@ -69,8 +97,9 @@ def test_config_json():
 
 def test_dockerfile():
     """Test that Dockerfile is properly structured."""
+    dockerfile_path = 'smart_climate_addon/Dockerfile'
     try:
-        with open('Dockerfile', 'r') as f:
+        with open(dockerfile_path, 'r') as f:
             content = f.read()
         
         required_commands = ['FROM', 'WORKDIR', 'COPY', 'RUN', 'CMD']
@@ -99,7 +128,7 @@ def test_dockerfile():
 
 def test_run_script():
     """Test that run.sh is executable and properly structured."""
-    run_path = Path('run.sh')
+    run_path = Path('smart_climate_addon/run.sh')
     
     if not run_path.exists():
         print("❌ run.sh not found")
@@ -131,7 +160,7 @@ def test_run_script():
 
 def test_python_imports():
     """Test that Python modules can be imported."""
-    sys.path.insert(0, os.getcwd())
+    sys.path.insert(0, os.path.join(os.getcwd(), 'smart_climate_addon'))
     
     try:
         from smart_climate import __version__
@@ -166,9 +195,10 @@ def test_python_imports():
 
 def main():
     """Run all tests."""
-    print("🧪 Testing Smart Climate Add-on Configuration\n")
+    print("🧪 Testing Smart Climate Add-on Repository Configuration\n")
     
     tests = [
+        test_repository_json,
         test_addon_structure,
         test_config_json,
         test_dockerfile,
@@ -188,7 +218,7 @@ def main():
     print(f"📊 Test Results: {passed}/{total} passed")
     
     if passed == total:
-        print("🎉 All tests passed! Add-on is ready for installation.")
+        print("🎉 All tests passed! Repository is ready for Home Assistant!")
         return 0
     else:
         print("❌ Some tests failed. Please fix the issues above.")

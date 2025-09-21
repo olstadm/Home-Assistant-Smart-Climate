@@ -25,11 +25,55 @@
     "ml_training_interval_hours": 1
   },
   "schema": {
-    "indoor_temperature_sensor": "str",
-    "outdoor_temperature_sensor": "str",
-    "climate_entity": "str",
-    "indoor_humidity_sensor": "str?",
-    "outdoor_humidity_sensor": "str?",
+    "indoor_temperature_sensor": {
+      "type": "str",
+      "description": "Indoor temperature sensor entity",
+      "selector": {
+        "entity": {
+          "domain": "sensor",
+          "device_class": "temperature"
+        }
+      }
+    },
+    "outdoor_temperature_sensor": {
+      "type": "str", 
+      "description": "Outdoor temperature sensor entity",
+      "selector": {
+        "entity": {
+          "domain": "sensor",
+          "device_class": "temperature"
+        }
+      }
+    },
+    "climate_entity": {
+      "type": "str",
+      "description": "Climate/thermostat entity to control",
+      "selector": {
+        "entity": {
+          "domain": "climate"
+        }
+      }
+    },
+    "indoor_humidity_sensor": {
+      "type": "str?",
+      "description": "Indoor humidity sensor entity (optional)",
+      "selector": {
+        "entity": {
+          "domain": "sensor",
+          "device_class": "humidity"
+        }
+      }
+    },
+    "outdoor_humidity_sensor": {
+      "type": "str?",
+      "description": "Outdoor humidity sensor entity (optional)",
+      "selector": {
+        "entity": {
+          "domain": "sensor", 
+          "device_class": "humidity"
+        }
+      }
+    },
     "learning_enabled": "bool",
     "forecast_hours": "int(1,24)",
     "update_interval_minutes": "int(1,60)",
