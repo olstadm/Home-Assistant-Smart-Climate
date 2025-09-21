@@ -1,0 +1,68 @@
+SMART CLIMATE DASHBOARD - LAYOUT MOCKUP
+=====================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           TOP SECTION (2 columns)                          │
+├──────────────────────────────────┬──────────────────────────────────────────┤
+│  🌡️ HVAC RECOMMENDATION         │  📊 LIVE COMFORT METRICS                │
+│                                  │                                          │
+│     ┌──────────────────────┐     │  😊 Comfort Score: 85%                  │
+│     │      COOLING         │     │  🍃 Energy Efficiency: 78%              │
+│     │    (Recommended)     │     │                                          │
+│     └──────────────────────┘     │  Last updated: 2 min ago                │
+└──────────────────────────────────┴──────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│               🌡️ TEMPERATURE FORECAST & COMFORT BAND                       │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 85°F ┌─────────────────────────────────────────────────────────┐ │   │
+│  │      │ ░░░░░░░░░░░░░░░░░░ COMFORT ZONE ░░░░░░░░░░░░░░░░░░░       │ │   │
+│  │ 80°F ├─────────────────────────────────────────────────────────┤ │   │
+│  │      │ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░     │ │   │
+│  │ 75°F ├─────────────────────────────────────────────────────────┤ │   │
+│  │      │ ─ ─ ─ 🏠 Indoor (Idle)                                  │ │   │
+│  │ 70°F ├─────────────────────────────────────────────────────────┤ │   │
+│  │      │ ───── 🎯 Indoor (Controlled)                            │ │   │
+│  │ 65°F ├─────────────────────────────────────────────────────────┤ │   │
+│  │      │ ・・・ 🌤️ Outdoor                                        │ │   │
+│  │ 60°F └─────────────────────────────────────────────────────────┘ │   │
+│  │        Now    +3h    +6h    +9h    +12h                         │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     QUICK INSIGHTS SECTION (3 columns)                     │
+├─────────────────────────┬─────────────────────────┬─────────────────────────┤
+│  🕐 QUICK FORECASTS     │  ⏰ TEMPERATURE LIMITS  │  🎯 SMART HVAC TIMING  │
+│                         │                         │                         │
+│  +30min: 72°F          │  Time to Cool Limit:    │  Start Cooling: 2:30pm │
+│  +1hr:   74°F          │  45 minutes             │  Start Heating: N/A     │
+│  +3hr:   76°F          │                         │                         │
+│                         │  Time to Heat Limit:    │  Turn Off Cooling:      │
+│                         │  beyond horizon         │  4:15pm                 │
+│                         │                         │  Turn Off Heating: N/A │
+└─────────────────────────┴─────────────────────────┴─────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                 CONFIGURATION SECTION (2 columns)                          │
+├──────────────────────────────────┬──────────────────────────────────────────┤
+│  ⚙️ COMFORT BAND SETTINGS        │  🧠 MODEL LEARNING STATUS               │
+│                                  │                                          │
+│  Maximum Temperature: 78°F       │  Training Samples: 1,247                │
+│  Minimum Temperature: 68°F       │  Model Error: 0.003                     │
+│  Forecast Hours: 12              │  Time Constant: 2.3h                    │
+│  ─────────────────────────       │  ─────────────────────────               │
+│  Indoor Accuracy: ±0.8°F         │  Heating Coeff: 0.45                    │
+│  Outdoor Accuracy: ±1.2°F        │  Cooling Coeff: -0.38                   │
+│                                  │  Solar Gain: 0.002                      │
+└──────────────────────────────────┴──────────────────────────────────────────┘
+
+KEY IMPROVEMENTS:
+✅ Prominent comfort and efficiency scores at top
+✅ Visual comfort zone highlighted on chart
+✅ Organized information by importance and usage
+✅ Quick access to key timing information
+✅ Clear visual hierarchy with icons and emojis
+✅ Better use of space and grouping
+✅ Enhanced chart with better styling and annotations

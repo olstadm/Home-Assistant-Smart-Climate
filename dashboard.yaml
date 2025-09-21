@@ -1,147 +1,232 @@
-title: Home
+title: Smart Climate Dashboard
 path: home
-icon: mdi:home-thermometer
+icon: mdi:home-thermometer-outline
 sections:
+  # Main Overview Section
   - type: grid
-    columns: 1
+    columns: 2
     cards:
-      - type: heading
-        heading: Forecast
-      - square: false
-        type: grid
-        cards:
-          - type: custom:apexcharts-card
-            header:
-              title: Indoor Temperature Forecast (Next 12h)
-              show: true
-            graph_span: 12h
-            now:
-              show: true
-            apex_config:
-              chart:
-                height: 360
-              legend:
-                show: true
-                position: top
-            yaxis:
-              - decimals: 0
-                apex_config:
-                  labels:
-                    formatter: |
-                      EVAL:function(val){return `${Math.round(val)}°F`}
-            series:
-              - entity: sensor.home_model_indoor_forecast_12h
-                name: Indoor (Idle)
-                type: line
-                data_generator: >
-                  return entity.attributes.series_idle.map(p => [new
-                  Date(p.t).getTime(), p.y]);
-              - entity: sensor.home_model_indoor_forecast_12h
-                name: Indoor (Controlled)
-                type: line
-                stroke_width: 3
-                data_generator: >
-                  if (!entity.attributes.series_controlled) return [];
-
-                  return entity.attributes.series_controlled.map(p => [new
-                  Date(p.t).getTime(), p.y]);
-              - entity: sensor.home_model_indoor_forecast_12h
-                name: Cooling Cap
-                type: line
-                stroke_dash: 6
-                data_generator: |
-                  const times = entity.attributes.times || [];
-                  const cap = entity.attributes.cap_f ?? 80;
-                  return times.map(t => [new Date(t).getTime(), cap]);
-              - entity: sensor.home_model_indoor_forecast_12h
-                name: Heating Floor
-                type: line
-                stroke_dash: 6
-                data_generator: |
-                  const times = entity.attributes.times || [];
-                  const floor = entity.attributes.floor_f ?? 62;
-                  return times.map(t => [new Date(t).getTime(), floor]);
-              - entity: sensor.home_model_outdoor_forecast_12h
-                name: Outdoor (Hourly)
-                type: line
-                opacity: 0.35
-                stroke_dash: 4
-                data_generator: >
-                  if (!entity.attributes.series) return [];
-
-                  return entity.attributes.series.map(p => [new
-                  Date(p.t).getTime(), p.y]);
-        grid_options:
-          columns: full
-        columns: 1
-    column_span: 4
-  - type: grid
-    columns: 1
-    cards:
-      - type: heading
-        heading: Climate Model
+      # Current Status Overview
       - type: tile
         entity: sensor.home_model_control_recommendation
+        name: HVAC Recommendation
+        icon: mdi:thermostat
+        color: blue
         features_position: bottom
         vertical: true
         hide_state: false
-        name: Predicted HVAC Mode
-        grid_options:
-          columns: full
       - type: entities
-        title: Recommendations
+        title: Live Comfort Metrics
+        show_header_toggle: false
+        entities:
+          - entity: sensor.home_model_comfort_score
+            name: Comfort Score
+            icon: mdi:emoticon-happy-outline
+            secondary_info: last-updated
+          - entity: sensor.home_model_energy_efficiency
+            name: Energy Efficiency
+            icon: mdi:leaf
+            secondary_info: last-updated
+    column_span: 4
+
+  # Enhanced Temperature Forecast Chart Section
+  - type: grid
+    columns: 1
+    cards:
+      - type: custom:apexcharts-card
+        header:
+          title: 🌡️ Temperature Forecast & Comfort Band
+          show: true
+          show_states: true
+          colorize_states: true
+        graph_span: 12h
+        now:
+          show: true
+          color: red
+          label: Now
+        apex_config:
+          chart:
+            height: 400
+            background: "#fafafa"
+          legend:
+            show: true
+            position: top
+            fontSize: 14
+          grid:
+            borderColor: "#e0e0e0"
+          annotations:
+            yaxis:
+              - y: 68
+                y2: 78
+                fillColor: "#4CAF50"
+                opacity: 0.1
+                label:
+                  text: "Comfort Zone"
+                  style:
+                    color: "#4CAF50"
+                    fontSize: 12
+        yaxis:
+          - decimals: 0
+            min: 55
+            max: 85
+            apex_config:
+              labels:
+                formatter: |
+                  EVAL:function(val){return `${Math.round(val)}°F`}
+        series:
+          - entity: sensor.home_model_indoor_forecast_12h
+            name: 🏠 Indoor (Idle Projection)
+            type: line
+            color: "#2196F3"
+            stroke_width: 3
+            data_generator: >
+              if (!entity.attributes.series) return [];
+              return entity.attributes.series.map(p => [new Date(p.t).getTime(), p.y]);
+          - entity: sensor.home_model_indoor_forecast_12h
+            name: 🎯 Indoor (With Control)
+            type: line
+            color: "#FF9800"
+            stroke_width: 3
+            stroke_dash: 3
+            data_generator: >
+              if (!entity.attributes.series_controlled) return [];
+              return entity.attributes.series_controlled.map(p => [new Date(p.t).getTime(), p.y]);
+          - entity: sensor.home_model_outdoor_forecast_12h
+            name: 🌤️ Outdoor Temperature
+            type: line
+            color: "#9E9E9E"
+            opacity: 0.6
+            stroke_width: 2
+            stroke_dash: 2
+            data_generator: >
+              if (!entity.attributes.series) return [];
+              return entity.attributes.series.map(p => [new Date(p.t).getTime(), p.y]);
+          - entity: sensor.home_model_indoor_forecast_12h
+            name: 🔴 Cooling Limit
+            type: line
+            color: "#F44336"
+            stroke_width: 2
+            stroke_dash: 8
+            data_generator: |
+              const times = entity.attributes.times || [];
+              const cap = entity.attributes.cap_f ?? 78;
+              return times.map(t => [new Date(t).getTime(), cap]);
+          - entity: sensor.home_model_indoor_forecast_12h
+            name: 🔵 Heating Limit
+            type: line
+            color: "#2196F3"
+            stroke_width: 2
+            stroke_dash: 8
+            data_generator: |
+              const times = entity.attributes.times || [];
+              const floor = entity.attributes.floor_f ?? 68;
+              return times.map(t => [new Date(t).getTime(), floor]);
+    column_span: 4
+
+  # Quick Insights and Timing Section
+  - type: grid
+    columns: 3
+    cards:
+      # Quick Temperature Checkpoints
+      - type: glance
+        title: 🕐 Quick Temperature Forecasts
+        show_name: true
+        show_state: true
+        show_icon: true
+        entities:
+          - entity: sensor.home_temp_plus_30m_model
+            name: "+30 min"
+            icon: mdi:clock-outline
+          - entity: sensor.home_temp_plus_60m_model
+            name: "+1 hour"
+            icon: mdi:clock-time-one-outline
+          - entity: sensor.home_temp_plus_180m_model
+            name: "+3 hours"
+            icon: mdi:clock-time-three-outline
+        columns: 3
+      
+      # Timing Alerts
+      - type: entities
+        title: ⏰ Temperature Limit Timing
+        show_header_toggle: false
+        entities:
+          - entity: sensor.home_model_time_to_cap_minutes
+            name: Time to Cooling Limit
+            icon: mdi:thermometer-chevron-up
+            secondary_info: last-updated
+          - entity: sensor.home_model_time_to_floor_minutes
+            name: Time to Heating Limit
+            icon: mdi:thermometer-chevron-down
+            secondary_info: last-updated
+      
+      # HVAC Timing Recommendations
+      - type: entities
+        title: 🎯 Smart HVAC Timing
         show_header_toggle: false
         entities:
           - entity: sensor.home_model_ideal_cool_start_time
-            name: Ideal Cooling Start
-          - entity: sensor.home_model_cool_off_time
-            name: Cooling Off (if cooling now)
+            name: Optimal Cooling Start
+            icon: mdi:snowflake
           - entity: sensor.home_model_ideal_heat_start_time
-            name: Ideal Heating Start
-          - entity: sensor.home_model_heat_off_time
-            name: Heating Off (if heating now)
+            name: Optimal Heating Start
+            icon: mdi:fire
           - type: divider
-          - entity: sensor.home_model_time_to_cap_minutes
-            name: Time To Cooling Cap (idle)
-          - entity: sensor.home_model_time_to_floor_minutes
-            name: Time To Heating Floor (idle)
+          - entity: sensor.home_model_cool_off_time
+            name: Turn Off Cooling
+            icon: mdi:snowflake-off
+          - entity: sensor.home_model_heat_off_time
+            name: Turn Off Heating
+            icon: mdi:fire-off
+    column_span: 4
+
+  # Configuration and Model Status Section
+  - type: grid
+    columns: 2
+    cards:
+      # Comfort Settings
       - type: entities
-        title: Comfort Band
+        title: ⚙️ Comfort Band Settings
         show_header_toggle: false
         entities:
-          - entity: input_number.home_model_comfort_cap
-            name: Cooling Cap (°F)
+          - entity: input_number.home_model_comfort_cap_f
+            name: Maximum Temperature
+            icon: mdi:thermometer-high
           - entity: input_number.home_model_heat_min_f
-            name: Heating Floor (°F)
+            name: Minimum Temperature
+            icon: mdi:thermometer-low
           - entity: input_number.home_model_forecast_hours
-            name: Forecast Horizon (hours)
+            name: Forecast Hours
+            icon: mdi:clock-time-twelve-outline
+          - type: divider
+          - entity: sensor.home_model_indoor_accuracy
+            name: Indoor Accuracy
+            icon: mdi:target
+          - entity: sensor.home_model_outdoor_accuracy
+            name: Outdoor Accuracy
+            icon: mdi:target
+
+      # Model Learning Status
       - type: entities
-        title: Model Parameters
+        title: 🧠 Model Learning Status
         show_header_toggle: false
         entities:
-          - entity: sensor.home_model_tau_hours
-            name: τ (hours)
-          - entity: sensor.home_model_k_heat
-            name: k_heat (°F/min)
-          - entity: sensor.home_model_k_cool
-            name: k_cool (°F/min)
-          - entity: sensor.home_model_bias
-            name: bias (°F/min)
-          - entity: sensor.home_model_k_enthalpy
-            name: k_enthalpy (°F/min per kJ/kg)
-          - entity: sensor.home_model_k_solar
-            name: k_solar (°F/min per W/m²)
           - entity: sensor.home_model_samples
-            name: Samples
+            name: Training Samples
+            icon: mdi:database
           - entity: sensor.home_model_fit_loss
-            name: Fit Loss
-      - type: glance
-        title: Short-Horizon Checkpoints
-        entities:
-          - entity: sensor.home_temp_plus_30m_model
-            name: +30m
-          - entity: sensor.home_temp_plus_60m_model
-            name: +60m
-          - entity: sensor.home_temp_plus_180m_model
-            name: +180m
+            name: Model Error
+            icon: mdi:chart-line-variant
+          - entity: sensor.home_model_tau_hours
+            name: Thermal Time Constant
+            icon: mdi:timer-sand
+          - type: divider
+          - entity: sensor.home_model_k_heat
+            name: Heating Coefficient
+            icon: mdi:fire
+          - entity: sensor.home_model_k_cool
+            name: Cooling Coefficient
+            icon: mdi:snowflake
+          - entity: sensor.home_model_k_solar
+            name: Solar Gain Factor
+            icon: mdi:weather-sunny
     column_span: 4
